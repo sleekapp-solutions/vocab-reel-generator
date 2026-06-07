@@ -2,9 +2,9 @@ name: Daily Vocab Reel
 
 on:
   schedule:
-    # Test schedule: 6:50 AM PDT / 1:50 PM UTC, then 7:05 AM PDT / 2:05 PM UTC.
-    - cron: "50 13 * * *"
-    - cron: "5 14 * * *"
+    # Twice daily, offset from the top of the hour to reduce GitHub scheduler delays.
+    - cron: "17 9 * * *"
+    - cron: "38 17 * * *"
   workflow_dispatch:   # allows manual trigger from GitHub UI (useful for testing)
 
 permissions:
