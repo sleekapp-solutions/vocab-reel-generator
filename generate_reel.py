@@ -43,7 +43,7 @@ WORD_PAIRS = [
 # "private"   → only you can see it (good for reviewing before publishing)
 # "unlisted"  → anyone with the link can see it
 # "public"    → visible to everyone on YouTube
-PRIVACY_STATUS = "private"
+PRIVACY_STATUS = "public"
 
 # In CI (GitHub Actions) this is overridden to "true" via env var.
 # Locally it stays False so you never accidentally upload while designing.

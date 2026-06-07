@@ -62,3 +62,66 @@ jobs:
           git add state.json
           git diff --staged --quiet || git commit -m "chore: advance word index [skip ci]"
           git push
+
+      # ── 8. Email notification ────────────────────────────────────────────
+      #    Add SMTP_* and NOTIFY_EMAIL_* secrets to enable this.
+      - name: Send email notification
+        if: always()
+        env:
+          SMTP_HOST:       ${{ secrets.SMTP_HOST }}
+          SMTP_PORT:       ${{ secrets.SMTP_PORT }}
+          SMTP_USERNAME:   ${{ secrets.SMTP_USERNAME }}
+          SMTP_PASSWORD:   ${{ secrets.SMTP_PASSWORD }}
+          NOTIFY_EMAIL_TO: ${{ secrets.NOTIFY_EMAIL_TO }}
+          NOTIFY_EMAIL_FROM: ${{ secrets.NOTIFY_EMAIL_FROM }}
+          WORKFLOW_STATUS: ${{ job.status }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          python3 - <<'PY'
+          import os
+          import smtplib
+          import ssl
+          from email.message import EmailMessage
+
+          required = [
+              "SMTP_HOST",
+              "SMTP_PORT",
+              "SMTP_USERNAME",
+              "SMTP_PASSWORD",
+              "NOTIFY_EMAIL_TO",
+              "NOTIFY_EMAIL_FROM",
+          ]
+          missing = [name for name in required if not os.getenv(name)]
+          if missing:
+              print("Email notification skipped. Missing secrets: " + ", ".join(missing))
+              raise SystemExit(0)
+
+          status = os.getenv("WORKFLOW_STATUS", "unknown")
+          run_url = os.getenv("RUN_URL", "")
+          subject = f"Daily Vocab Reel: {status}"
+          body = (
+              f"Daily Vocab Reel finished with status: {status}\n\n"
+              f"Workflow run:\n{run_url}\n"
+          )
+
+          msg = EmailMessage()
+          msg["Subject"] = subject
+          msg["From"] = os.environ["NOTIFY_EMAIL_FROM"]
+          msg["To"] = os.environ["NOTIFY_EMAIL_TO"]
+          msg.set_content(body)
+
+          host = os.environ["SMTP_HOST"]
+          port = int(os.environ["SMTP_PORT"])
+          username = os.environ["SMTP_USERNAME"]
+          password = os.environ["SMTP_PASSWORD"]
+
+          if port == 465:
+              with smtplib.SMTP_SSL(host, port, context=ssl.create_default_context()) as server:
+                  server.login(username, password)
+                  server.send_message(msg)
+          else:
+              with smtplib.SMTP(host, port) as server:
+                  server.starttls(context=ssl.create_default_context())
+                  server.login(username, password)
+                  server.send_message(msg)
+          PY
