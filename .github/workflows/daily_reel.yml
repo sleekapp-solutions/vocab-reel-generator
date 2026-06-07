@@ -2,8 +2,9 @@ name: Daily Vocab Reel
 
 on:
   schedule:
-    # 5:00 AM UTC = 9:00 AM Gulf Standard Time (GST = UTC+4)
-    - cron: "0 5 * * *"
+    # Test schedule: 6:11 AM PDT / 1:11 PM UTC, then 9:11 AM PDT / 4:11 PM UTC.
+    - cron: "11 13 * * *"
+    - cron: "11 16 * * *"
   workflow_dispatch:   # allows manual trigger from GitHub UI (useful for testing)
 
 permissions:
