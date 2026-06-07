@@ -1,0 +1,64 @@
+name: Daily Vocab Reel
+
+on:
+  schedule:
+    # 5:00 AM UTC = 9:00 AM Gulf Standard Time (GST = UTC+4)
+    - cron: "0 5 * * *"
+  workflow_dispatch:   # allows manual trigger from GitHub UI (useful for testing)
+
+permissions:
+  contents: write      # needed to commit state.json back to the repo
+
+jobs:
+  generate-and-upload:
+    runs-on: ubuntu-latest
+
+    steps:
+      # ── 1. Check out the repo (includes state.json) ──────────────────────
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      # ── 2. Install system dependencies ───────────────────────────────────
+      - name: Install FFmpeg and Arabic fonts
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg fonts-hosny-amiri fonts-liberation
+
+      # ── 3. Set up Python ──────────────────────────────────────────────────
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      # ── 4. Install Python packages ────────────────────────────────────────
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # ── 5. Write YouTube secrets to disk ─────────────────────────────────
+      #    client_secrets.json → from Google Cloud Console (OAuth 2.0 client)
+      #    token.json          → generated once locally, then stored as secret
+      - name: Write YouTube credentials
+        run: |
+          echo '${{ secrets.YOUTUBE_CLIENT_SECRETS }}' > client_secrets.json
+          echo '${{ secrets.YOUTUBE_TOKEN_JSON }}'     > token.json
+
+      # ── 6. Generate image, audio, video + upload to YouTube ───────────────
+      - name: Run VocabReelGenerator
+        env:
+          SHEET_CSV_URL:     ${{ secrets.SHEET_CSV_URL }}
+          UPLOAD_TO_YOUTUBE: "true"
+          PREVIEW_ONLY:      "false"
+        run: python3 generate_reel.py
+
+      # ── 7. Commit updated state.json back to the repo ─────────────────────
+      #    [skip ci] prevents this commit from triggering another workflow run
+      - name: Save word index
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add state.json
+          git diff --staged --quiet || git commit -m "chore: advance word index [skip ci]"
+          git push

@@ -1,0 +1,17 @@
+.DS_Store
+
+# Local Python environment
+venv/
+.venv/
+__pycache__/
+*.pyc
+
+# Local Google/YouTube credentials. Store these in GitHub Actions secrets.
+client_secrets.json
+token.json
+
+# Generated media
+output/*
+!output/.gitkeep
+previews/
+videos/
