@@ -200,25 +200,46 @@ def fetch_sheet_words(csv_url: str) -> list:
     """
     Download a Google Sheet published as CSV and return all word pairs.
     The sheet must have two columns with headers: arabic, english
+    Optional third column: level
     Publish via: File → Share → Publish to web → select sheet → CSV → Publish
     """
     try:
         with urllib.request.urlopen(csv_url, timeout=15) as resp:
-            text = resp.read().decode("utf-8")
+            text = resp.read().decode("utf-8-sig")
     except Exception as exc:
         sys.exit(f"\n  Failed to fetch Google Sheet:\n  {exc}\n"
                  "  Check that SHEET_CSV_URL is correct and the sheet is published publicly.\n")
 
     reader = csv.DictReader(text.splitlines())
+    headers = reader.fieldnames or []
+    header_lookup = {header.strip().lower(): header for header in headers if header}
+
+    arabic_col = header_lookup.get("arabic")
+    english_col = header_lookup.get("english")
+    level_col = header_lookup.get("level")
+
+    if not arabic_col or not english_col:
+        seen = ", ".join(headers) if headers else "(none)"
+        sys.exit(
+            "\n  Sheet is missing required columns.\n"
+            "  Required headers: arabic, english\n"
+            "  Optional header: level\n"
+            f"  Headers found: {seen}\n"
+        )
+
     pairs  = []
     for row in reader:
-        ar = row.get("arabic", "").strip()
-        en = row.get("english", "").strip()
+        ar = row.get(arabic_col, "").strip()
+        en = row.get(english_col, "").strip()
+        level = row.get(level_col, "").strip() if level_col else ""
         if ar and en:
-            pairs.append((ar, en))
+            pairs.append((ar, en, level))
 
     if not pairs:
-        sys.exit("  Sheet has no valid rows. Make sure columns are named 'arabic' and 'english'.\n")
+        sys.exit(
+            "\n  Sheet has no valid rows.\n"
+            "  Make sure at least one row has both arabic and english filled in.\n"
+        )
 
     print(f"  Sheet loaded: {len(pairs)} word pairs total")
     return pairs
