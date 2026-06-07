@@ -24,7 +24,7 @@ jobs:
       - name: Install FFmpeg and Arabic fonts
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y ffmpeg fonts-hosny-amiri fonts-liberation
+          sudo apt-get install -y ffmpeg fonts-hosny-amiri fonts-noto-core fonts-liberation
 
       # ── 3. Set up Python ──────────────────────────────────────────────────
       - name: Set up Python

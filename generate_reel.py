@@ -68,10 +68,16 @@ WORDS_PER_REEL = 5
 
 ARABIC_FONT_CANDIDATES = [
     FONTS_DIR / "Amiri-Regular.ttf",
+    FONTS_DIR / "NotoNaskhArabic-Regular.ttf",
+    Path("/System/Library/Fonts/GeezaPro.ttc"),                          # macOS — best Arabic
     Path("/System/Library/Fonts/SFArabic.ttf"),                          # macOS
+    Path("/System/Library/Fonts/Supplemental/DecoTypeNaskh.ttc"),         # macOS fallback
     Path("/System/Library/Fonts/Supplemental/Arial Unicode.ttf"),        # macOS fallback
     Path("/Library/Fonts/Arial Unicode.ttf"),                            # macOS fallback
     Path("/usr/share/fonts/truetype/amiri/Amiri-Regular.ttf"),           # Ubuntu (CI)
+    Path("/usr/share/fonts/truetype/hosny-amiri/Amiri-Regular.ttf"),      # Ubuntu package path
+    Path("/usr/share/fonts/truetype/hosny-amiri/amiri-regular.ttf"),      # Ubuntu package path
+    Path("/usr/share/fonts/truetype/noto/NotoNaskhArabic-Regular.ttf"),   # Ubuntu Noto Arabic
     Path("/usr/share/fonts/truetype/arabeyes/ae_AlArabiya.ttf"),         # Ubuntu fallback
 ]
 
