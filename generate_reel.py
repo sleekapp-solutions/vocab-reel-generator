@@ -132,7 +132,7 @@ _require("pydub",                "pydub")
 _require("arabic_reshaper",      "arabic-reshaper")
 _require("bidi.algorithm",       "python-bidi")
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, features
 from gtts import gTTS
 from pydub import AudioSegment
 import arabic_reshaper
@@ -195,6 +195,22 @@ def arabic_display(text: str) -> str:
     """
     reshaped = arabic_reshaper.reshape(text)
     return get_display(reshaped)
+
+
+def draw_arabic_text(draw: ImageDraw.ImageDraw, xy: tuple, text: str,
+                     font: ImageFont.FreeTypeFont, fill: tuple,
+                     anchor: str = "mm") -> None:
+    """
+    Draw Arabic correctly across environments.
+    GitHub's Pillow build can use libraqm for native RTL shaping; local/macOS
+    builds often cannot, so they still need the manual reshaper+bidi fallback.
+    """
+    if features.check("raqm"):
+        draw.text(xy, text, font=font, fill=fill, anchor=anchor,
+                  direction="rtl", language="ar")
+    else:
+        draw.text(xy, arabic_display(text),
+                  font=font, fill=fill, anchor=anchor)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -385,8 +401,8 @@ def create_image(word_pairs: list, level: str, output_path: Path) -> Path:
     # ── Level pill ──────────────────────────────────────────────────────────
     pill_cx = (_PILL_X1 + _PILL_X2) // 2
     pill_cy = (_PILL_Y1 + _PILL_Y2) // 2
-    draw.text((pill_cx, pill_cy), arabic_display(level),
-              font=level_font, fill=GOLD, anchor="mm")
+    draw_arabic_text(draw, (pill_cx, pill_cy), level,
+                     font=level_font, fill=GOLD)
 
     # ── Word rows ──────────────────────────────────────────────────────────
     for i, (ar, en) in enumerate(word_pairs):
@@ -398,9 +414,9 @@ def create_image(word_pairs: list, level: str, output_path: Path) -> Path:
         draw.text((_EN_CENTER_X, mid_y), en,
                   font=english_font, fill=NAVY, anchor="mm")
 
-        # Arabic word — centred in the right card half (RTL-transformed)
-        draw.text((_AR_CENTER_X, mid_y), arabic_display(ar),
-                  font=arabic_font, fill=NAVY, anchor="mm")
+        # Arabic word — centred in the right card half
+        draw_arabic_text(draw, (_AR_CENTER_X, mid_y), ar,
+                         font=arabic_font, fill=NAVY)
 
     # ── Save ───────────────────────────────────────────────────────────────
     output_path.parent.mkdir(parents=True, exist_ok=True)
