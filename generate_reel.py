@@ -640,7 +640,7 @@ def upload_to_youtube(video_path: Path, youtube,
             print(f"  Uploading… {pct}%", end="\r", flush=True)
 
     video_id  = response["id"]
-    video_url = f"https://www.youtube.com/watch?v={video_id}"
+    video_url = f"https://www.youtube.com/shorts/{video_id}"
     print(f"\n  Uploaded! → {video_url}")
     return video_url
 
