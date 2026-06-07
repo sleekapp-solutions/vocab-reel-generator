@@ -62,13 +62,12 @@ PREVIEWS_DIR = Path("previews")   # timestamped images saved here for review
 VIDEOS_DIR   = Path("videos")     # timestamped videos saved here for review
 FONTS_DIR    = Path("assets") / "fonts"
 
-SHEET_CSV_URL  = os.getenv("SHEET_CSV_URL", "")
+SHEET_CSV_URL  = os.getenv("SHEET_CSV_URL", "https://docs.google.com/spreadsheets/d/e/2PACX-1vTwrDK1Jvw6JKf2wVntr4uq1ruHof4oe0z_blIlTIkanPEbbpOfH4p0agPZjZY_CfhiwmwpQ59YfY9x/pub?output=csv")
 STATE_FILE     = Path("state.json")
 WORDS_PER_REEL = 5
 
 ARABIC_FONT_CANDIDATES = [
     FONTS_DIR / "Amiri-Regular.ttf",
-    Path("/System/Library/Fonts/GeezaPro.ttc"),                          # macOS — best Arabic
     Path("/System/Library/Fonts/SFArabic.ttf"),                          # macOS
     Path("/System/Library/Fonts/Supplemental/Arial Unicode.ttf"),        # macOS fallback
     Path("/Library/Fonts/Arial Unicode.ttf"),                            # macOS fallback
@@ -365,12 +364,12 @@ def create_image(word_pairs: list, level: str, output_path: Path) -> Path:
     # ── Fonts ───────────────────────────────────────────────────────────────
     english_font = load_font(BOLD_FONT_CANDIDATES,    62)
     arabic_font  = load_font(ARABIC_FONT_CANDIDATES,  58)
-    level_font   = load_font(ENGLISH_FONT_CANDIDATES, 28)
+    level_font   = load_font(ARABIC_FONT_CANDIDATES, 32)
 
     # ── Level pill ──────────────────────────────────────────────────────────
-    pill_cx = (_PILL_X1 + _PILL_X2) // 2  # = 467
-    pill_cy = (_PILL_Y1 + _PILL_Y2) // 2  # = 626
-    draw.text((pill_cx, pill_cy), level,
+    pill_cx = (_PILL_X1 + _PILL_X2) // 2
+    pill_cy = (_PILL_Y1 + _PILL_Y2) // 2
+    draw.text((pill_cx, pill_cy), arabic_display(level),
               font=level_font, fill=GOLD, anchor="mm")
 
     # ── Word rows ──────────────────────────────────────────────────────────
