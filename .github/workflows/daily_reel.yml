@@ -50,6 +50,9 @@ jobs:
       - name: Run VocabReelGenerator
         env:
           SHEET_CSV_URL:     ${{ secrets.SHEET_CSV_URL }}
+          AZURE_SPEECH_KEY:  ${{ secrets.AZURE_SPEECH_KEY }}
+          AZURE_SPEECH_REGION: ${{ secrets.AZURE_SPEECH_REGION }}
+          AZURE_ARABIC_VOICE:  ${{ vars.AZURE_ARABIC_VOICE || 'ar-EG-SalmaNeural' }}
           UPLOAD_TO_YOUTUBE: "true"
           PREVIEW_ONLY:      "false"
         run: python3 generate_reel.py

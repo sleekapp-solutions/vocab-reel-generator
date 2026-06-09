@@ -4,7 +4,7 @@ VocabReelGenerator — generate_reel.py
 
 End-to-end pipeline:
   1. Render a 1080×1920 vocabulary card (Pillow)
-  2. Generate Arabic + English voiceover (gTTS + pydub)
+  2. Generate Arabic + English voiceover (Azure Speech/gTTS + pydub)
   3. Combine into an MP4 (FFmpeg)
   4. Upload to YouTube as a Short (YouTube Data API v3)
 """
@@ -51,6 +51,12 @@ UPLOAD_TO_YOUTUBE = os.getenv("UPLOAD_TO_YOUTUBE", "false").lower() == "true"
 
 # Set to True to generate ONLY the image (skips audio, video, and upload).
 PREVIEW_ONLY = os.getenv("PREVIEW_ONLY", "false").lower() == "true"
+
+# Set to True to generate sample gTTS pronunciation clips and stop.
+TEST_GTTS = os.getenv("TEST_GTTS", "false").lower() == "true"
+
+# Set to True to generate sample Azure Egyptian Arabic clips and stop.
+TEST_AZURE_TTS = os.getenv("TEST_AZURE_TTS", "false").lower() == "true"
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -106,6 +112,14 @@ IMG_W, IMG_H = 1080, 1920  # 9:16 portrait — required for YouTube Shorts
 # How long to pause between spoken segments (milliseconds)
 PAUSE_AFTER_ARABIC  = 600   # between Arabic and English of the same pair
 PAUSE_AFTER_ENGLISH = 1200  # between one pair and the next
+
+# Azure Speech TTS for Egyptian Arabic. If key/region are missing, Arabic falls
+# back to gTTS so local previews and CI still run. Recommended voices:
+#   ar-EG-SalmaNeural   female
+#   ar-EG-ShakirNeural  male
+AZURE_SPEECH_KEY    = os.getenv("AZURE_SPEECH_KEY", "")
+AZURE_SPEECH_REGION = os.getenv("AZURE_SPEECH_REGION", "")
+AZURE_ARABIC_VOICE  = os.getenv("AZURE_ARABIC_VOICE", "ar-EG-SalmaNeural")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -310,7 +324,6 @@ def build_metadata(word_pairs: list) -> tuple:
         "عايز تتكلم إنجليزي بطلاقة؟ ابدأ بالكلمات دي 🚀 #Shorts",
         "خمس كلمات هيستخدمهم أي Native Speaker 🇺🇸 #Shorts",
         "تحدي سريع: تعرف معنى الكلمات دي؟ 🤔 #Shorts",
-        "5 كلمات هتسمعهم في الأفلام والمسلسلات 🎬 #Shorts",
         "احفظهم النهارده واشكرني بعدين 😎 #Shorts",
     ]
     title = random.choice(title_variations)
@@ -442,16 +455,135 @@ def create_image(word_pairs: list, level: str, output_path: Path) -> Path:
 # ❼  AUDIO GENERATION
 # ══════════════════════════════════════════════════════════════════════════════
 
+GTTS_TEST_WORDS = [
+    # (English, Arabic, pronunciation guide)
+    ("Please", "من فضلك", "Min fadlak"),
+    ("Thank you", "شكراً", "Shokran"),
+    ("House", "بيت", "Beit"),
+]
+
+
+def test_gtts_pronunciation(output_dir: Path = OUTPUT_DIR / "gtts_tests") -> Path:
+    """
+    Generate small sample MP3 files so you can hear how gTTS pronounces
+    common Arabic words/phrases before using them in reels.
+    """
+    print("  Generating gTTS pronunciation test clips…")
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    manifest_lines = ["English\tArabic\tPronunciation\tArabic MP3\tEnglish MP3"]
+    for i, (english, arabic, pronunciation) in enumerate(GTTS_TEST_WORDS, start=1):
+        stem = f"{i:02d}_{english.lower().replace(' ', '_')}"
+        arabic_path = output_dir / f"{stem}_ar.mp3"
+        english_path = output_dir / f"{stem}_en.mp3"
+
+        print(f"    [{i}/{len(GTTS_TEST_WORDS)}] {english} / {arabic} ({pronunciation})")
+        try:
+            gTTS(text=arabic, lang="ar", slow=True).save(str(arabic_path))
+            time.sleep(0.35)
+            gTTS(text=english, lang="en").save(str(english_path))
+            time.sleep(0.35)
+        except Exception as exc:
+            sys.exit(f"\n  gTTS pronunciation test failed for '{arabic}': {exc}\n"
+                     "  Check your internet connection and try again.\n")
+
+        manifest_lines.append(
+            f"{english}\t{arabic}\t{pronunciation}\t{arabic_path.name}\t{english_path.name}"
+        )
+
+    manifest_path = output_dir / "manifest.tsv"
+    manifest_path.write_text("\n".join(manifest_lines) + "\n", encoding="utf-8")
+    print(f"  Saved clips → {output_dir}")
+    print(f"  Manifest   → {manifest_path}")
+    return output_dir
+
+
+def azure_tts_enabled() -> bool:
+    return bool(AZURE_SPEECH_KEY and AZURE_SPEECH_REGION)
+
+
+def synthesize_arabic_azure(text: str, output_path: Path,
+                            voice: str = AZURE_ARABIC_VOICE) -> Path:
+    """Synthesize Arabic with Azure Speech using an Egyptian Arabic voice."""
+    if not azure_tts_enabled():
+        sys.exit(
+            "\n  Azure Speech is not configured.\n"
+            "  Set AZURE_SPEECH_KEY and AZURE_SPEECH_REGION, then try again.\n"
+        )
+
+    speechsdk = _require(
+        "azure.cognitiveservices.speech",
+        "azure-cognitiveservices-speech"
+    )
+
+    speech_config = speechsdk.SpeechConfig(
+        subscription=AZURE_SPEECH_KEY,
+        region=AZURE_SPEECH_REGION,
+    )
+    speech_config.speech_synthesis_voice_name = voice
+    speech_config.set_speech_synthesis_output_format(
+        speechsdk.SpeechSynthesisOutputFormat.Audio16Khz32KBitRateMonoMp3
+    )
+
+    audio_config = speechsdk.audio.AudioOutputConfig(filename=str(output_path))
+    synthesizer = speechsdk.SpeechSynthesizer(
+        speech_config=speech_config,
+        audio_config=audio_config,
+    )
+
+    result = synthesizer.speak_text_async(text).get()
+    if result.reason == speechsdk.ResultReason.SynthesizingAudioCompleted:
+        return output_path
+
+    if result.reason == speechsdk.ResultReason.Canceled:
+        details = result.cancellation_details
+        raise RuntimeError(
+            f"Azure Speech canceled synthesis: {details.reason}; "
+            f"{details.error_details}"
+        )
+
+    raise RuntimeError(f"Azure Speech failed with result reason: {result.reason}")
+
+
+def test_azure_pronunciation(output_dir: Path = OUTPUT_DIR / "azure_tts_tests") -> Path:
+    """Generate Egyptian Arabic Azure TTS samples for quick listening tests."""
+    print(f"  Generating Azure Egyptian Arabic clips with {AZURE_ARABIC_VOICE}…")
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    manifest_lines = ["English\tArabic\tPronunciation\tVoice\tArabic MP3"]
+    for i, (english, arabic, pronunciation) in enumerate(GTTS_TEST_WORDS, start=1):
+        stem = f"{i:02d}_{english.lower().replace(' ', '_')}"
+        arabic_path = output_dir / f"{stem}_azure_ar.mp3"
+
+        print(f"    [{i}/{len(GTTS_TEST_WORDS)}] {english} / {arabic} ({pronunciation})")
+        try:
+            synthesize_arabic_azure(arabic, arabic_path)
+            time.sleep(0.2)
+        except Exception as exc:
+            sys.exit(f"\n  Azure pronunciation test failed for '{arabic}': {exc}\n")
+
+        manifest_lines.append(
+            f"{english}\t{arabic}\t{pronunciation}\t{AZURE_ARABIC_VOICE}\t{arabic_path.name}"
+        )
+
+    manifest_path = output_dir / "manifest.tsv"
+    manifest_path.write_text("\n".join(manifest_lines) + "\n", encoding="utf-8")
+    print(f"  Saved clips → {output_dir}")
+    print(f"  Manifest   → {manifest_path}")
+    return output_dir
+
+
 def create_audio(word_pairs: list, output_path: Path) -> Path:
     """
-    Build an MP3 voiceover by concatenating gTTS clips:
+    Build an MP3 voiceover by concatenating TTS clips:
       Arabic (slow) → 0.6 s pause → English → 1.2 s pause → (next pair) …
 
-    Each gTTS call makes an HTTP request to Google's servers, so:
+    Each TTS call makes an HTTP request, so:
       • You need an internet connection.
-      • A small sleep between calls avoids hitting Google's rate limit.
+      • A small sleep between calls avoids hitting provider rate limits.
     """
-    print("  Generating audio…")
+    arabic_tts_source = "Azure Speech" if azure_tts_enabled() else "gTTS"
+    print(f"  Generating audio… Arabic TTS: {arabic_tts_source}")
 
     silence_short = AudioSegment.silent(duration=PAUSE_AFTER_ARABIC)
     silence_long  = AudioSegment.silent(duration=PAUSE_AFTER_ENGLISH)
@@ -464,9 +596,12 @@ def create_audio(word_pairs: list, output_path: Path) -> Path:
             # ── Arabic clip ────────────────────────────────────────────────
             ar_path = os.path.join(tmp, f"ar_{i}.mp3")
             try:
-                gTTS(text=ar, lang="ar", slow=True).save(ar_path)
+                if azure_tts_enabled():
+                    synthesize_arabic_azure(ar, Path(ar_path))
+                else:
+                    gTTS(text=ar, lang="ar", slow=True).save(ar_path)
             except Exception as exc:
-                sys.exit(f"\n  gTTS failed for Arabic word '{ar}': {exc}\n"
+                sys.exit(f"\n  Arabic TTS failed for word '{ar}': {exc}\n"
                          "  Check your internet connection and try again.\n")
             ar_seg = AudioSegment.from_mp3(ar_path)
             time.sleep(0.35)   # brief pause to avoid Google rate-limit
@@ -653,6 +788,16 @@ def main():
     print("\n" + "═" * 56)
     print("  VocabReelGenerator")
     print("═" * 56 + "\n")
+
+    if TEST_GTTS:
+        test_gtts_pronunciation()
+        print("\n" + "═" * 56 + "\n")
+        return
+
+    if TEST_AZURE_TTS:
+        test_azure_pronunciation()
+        print("\n" + "═" * 56 + "\n")
+        return
 
     # ── Resolve word pairs ─────────────────────────────────────────────────
     # Automated run (GitHub Actions): fetch from Google Sheet + advance state
