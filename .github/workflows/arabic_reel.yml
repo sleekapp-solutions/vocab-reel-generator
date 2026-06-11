@@ -1,10 +1,9 @@
-name: Daily English Vocab Reel
+name: Egyptian Arabic Words Reel
 
 on:
   schedule:
-    # Twice daily, offset from the top of the hour to reduce GitHub scheduler delays.
-    - cron: "17 9 * * *"
-    - cron: "38 17 * * *"
+    # Daily, offset from the top of the hour to reduce GitHub scheduler delays.
+    - cron: "23 13 * * *"
   workflow_dispatch:
     inputs:
       upload_to_youtube:
@@ -17,74 +16,64 @@ permissions:
   contents: write      # needed to commit state files back to the repo
 
 jobs:
-  generate-and-upload:
+  generate-arabic-reel:
     runs-on: ubuntu-latest
 
     steps:
-      # ── 1. Check out the repo (includes state files) ─────────────────────
       - name: Checkout repo
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      # ── 2. Install system dependencies ───────────────────────────────────
       - name: Install FFmpeg and Arabic fonts
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y ffmpeg fonts-hosny-amiri fonts-noto-core fonts-liberation
 
-      # ── 3. Set up Python ──────────────────────────────────────────────────
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           cache: pip
 
-      # ── 4. Install Python packages ────────────────────────────────────────
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      # ── 5. Write YouTube secrets to disk ─────────────────────────────────
-      #    client_secrets.json → from Google Cloud Console (OAuth 2.0 client)
-      #    token.json          → generated once locally, then stored as secret
       - name: Write YouTube credentials
         if: ${{ github.event_name == 'schedule' || inputs.upload_to_youtube == true }}
         run: |
           echo '${{ secrets.YOUTUBE_CLIENT_SECRETS }}' > client_secrets.json
           echo '${{ secrets.YOUTUBE_TOKEN_JSON }}'     > token.json
 
-      # ── 6. Generate image, audio, video + upload to YouTube ───────────────
-      - name: Run VocabReelGenerator
+      - name: Run Egyptian Arabic reel
         env:
-          SHEET_CSV_URL:    ${{ secrets.SHEET_CSV_URL }}
-          ARABIC_WORDS_REEL: "false"
+          ARABIC_WORDS_REEL: "true"
+          ARABIC_SHEET_CSV_URL: ${{ secrets.ARABIC_SHEET_CSV_URL }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_TTS_MODEL: ${{ vars.GEMINI_TTS_MODEL || 'gemini-3.1-flash-tts-preview' }}
+          GEMINI_TTS_VOICE: ${{ vars.GEMINI_TTS_VOICE || 'Achird' }}
           UPLOAD_TO_YOUTUBE: ${{ github.event_name == 'schedule' || inputs.upload_to_youtube == true }}
-          PREVIEW_ONLY:      "false"
+          PREVIEW_ONLY: "false"
         run: python3 generate_reel.py
 
-      # ── 7. Save generated files for dry-run review ───────────────────────
       - name: Upload dry-run artifact
         if: ${{ github.event_name != 'schedule' && inputs.upload_to_youtube != true }}
         uses: actions/upload-artifact@v4
         with:
-          name: english-vocab-reel-dry-run
+          name: egyptian-arabic-reel-dry-run
           path: |
-            outputs/english_vocab_reel.mp4
-            outputs/english_vocab_image.png
+            outputs/arabic_words_reel.mp4
+            outputs/arabic_words_image.png
 
-      # ── 8. Commit updated state files back to the repo ────────────────────
-      #    [skip ci] prevents this commit from triggering another workflow run
-      - name: Save word index
+      - name: Save Arabic word index
         if: ${{ github.event_name == 'schedule' || inputs.upload_to_youtube == true }}
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add state_english.json
-          git diff --staged --quiet || git commit -m "chore: advance word index [skip ci]"
+          git add state_arabic.json
+          git diff --staged --quiet || git commit -m "chore: advance Arabic word index [skip ci]"
           git push
 
-      # ── 9. Email notification ────────────────────────────────────────────
-      #    Add SMTP_* and NOTIFY_EMAIL_* secrets to enable this.
       - name: Send email notification
         if: always()
         env:
@@ -118,9 +107,9 @@ jobs:
 
           status = os.getenv("WORKFLOW_STATUS", "unknown")
           run_url = os.getenv("RUN_URL", "")
-          subject = f"Daily English Vocab Reel: {status}"
+          subject = f"Egyptian Arabic Words Reel: {status}"
           body = (
-              f"Daily English Vocab Reel finished with status: {status}\n\n"
+              f"Egyptian Arabic Words Reel finished with status: {status}\n\n"
               f"Workflow run:\n{run_url}\n"
           )
 

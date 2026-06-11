@@ -23,10 +23,13 @@ VocabReelGenerator/
 │       ├── Amiri-Regular.ttf      ← Arabic font (Step 3)
 │       ├── Roboto-Regular.ttf     ← English font (Step 3)
 │       └── Roboto-Bold.ttf        ← Bold font (Step 3)
-└── output/
-    ├── vocab_image.png    ← generated card
-    ├── vocab_audio.mp3    ← generated voiceover
-    └── vocab_reel.mp4     ← final video
+└── outputs/
+    ├── english_vocab_image.png   ← generated English vocab card
+    ├── english_vocab_audio.mp3   ← generated English vocab voiceover
+    ├── english_vocab_reel.mp4    ← final English vocab video
+    ├── arabic_words_image.png    ← generated Egyptian Arabic card
+    ├── arabic_words_audio.mp3    ← generated Egyptian Arabic voiceover
+    └── arabic_words_reel.mp4     ← final Egyptian Arabic video
 ```
 
 ---
@@ -252,13 +255,13 @@ python3 generate_reel.py
 WORD_PAIRS
     │
     ├─→ Pillow (create_image)
-    │       Gradient background + Arabic/English layout → vocab_image.png
+    │       Gradient background + Arabic/English layout → outputs/*_image.png
     │
     ├─→ gTTS + pydub (create_audio)
-    │       One TTS clip per word, concatenated with silences → vocab_audio.mp3
+    │       Voiceover generation → outputs/*_audio.mp3
     │
     ├─→ FFmpeg (create_video)
-    │       Static image looped over audio → vocab_reel.mp4
+    │       Static image looped over audio → outputs/*_reel.mp4
     │
     └─→ YouTube API (upload_to_youtube)
             OAuth2 login → resumable upload → YouTube Short URL

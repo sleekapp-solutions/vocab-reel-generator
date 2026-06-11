@@ -7,8 +7,8 @@ Pillow>=9.5.0
 # Text-to-speech (calls Google's TTS service — requires internet)
 gTTS>=2.3.2
 
-# Egyptian Arabic text-to-speech via Azure Speech
-azure-cognitiveservices-speech>=1.43.0
+# Egyptian Arabic text-to-speech via Gemini
+google-genai>=1.0.0
 
 # Audio manipulation (concatenation, silence insertion)
 pydub>=0.25.1

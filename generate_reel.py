@@ -4,7 +4,7 @@ VocabReelGenerator — generate_reel.py
 
 End-to-end pipeline:
   1. Render a 1080×1920 vocabulary card (Pillow)
-  2. Generate Arabic + English voiceover (Azure Speech/gTTS + pydub)
+  2. Generate Arabic + English voiceover (gTTS for English vocab, Gemini for Arabic vocab)
   3. Combine into an MP4 (FFmpeg)
   4. Upload to YouTube as a Short (YouTube Data API v3)
 """
@@ -52,25 +52,42 @@ UPLOAD_TO_YOUTUBE = os.getenv("UPLOAD_TO_YOUTUBE", "false").lower() == "true"
 # Set to True to generate ONLY the image (skips audio, video, and upload).
 PREVIEW_ONLY = os.getenv("PREVIEW_ONLY", "false").lower() == "true"
 
-# Set to True to generate sample gTTS pronunciation clips and stop.
-TEST_GTTS = os.getenv("TEST_GTTS", "false").lower() == "true"
+# Set to True to generate both reel types in one run.
+RUN_BOTH_REELS = os.getenv("RUN_BOTH_REELS", "false").lower() == "true"
 
-# Set to True to generate sample Azure Egyptian Arabic clips and stop.
-TEST_AZURE_TTS = os.getenv("TEST_AZURE_TTS", "false").lower() == "true"
+# Keep the existing daily flow as the default. Set ARABIC_WORDS_REEL=true for
+# the newer "learn 7 Arabic words" reel type once its background is ready.
+ARABIC_WORDS_REEL = os.getenv("ARABIC_WORDS_REEL", "false").lower() == "true"
 
 
 # ══════════════════════════════════════════════════════════════════════════════
 # ❸  PATHS & TIMING  ── usually no need to change these
 # ══════════════════════════════════════════════════════════════════════════════
 
-OUTPUT_DIR   = Path("output")
-PREVIEWS_DIR = Path("previews")   # timestamped images saved here for review
-VIDEOS_DIR   = Path("videos")     # timestamped videos saved here for review
+OUTPUT_DIR   = Path("outputs")
 FONTS_DIR    = Path("assets") / "fonts"
 
 SHEET_CSV_URL  = os.getenv("SHEET_CSV_URL", "https://docs.google.com/spreadsheets/d/e/2PACX-1vTwrDK1Jvw6JKf2wVntr4uq1ruHof4oe0z_blIlTIkanPEbbpOfH4p0agPZjZY_CfhiwmwpQ59YfY9x/pub?output=csv")
-STATE_FILE     = Path("state.json")
+ARABIC_SHEET_CSV_URL = os.getenv("ARABIC_SHEET_CSV_URL", "https://docs.google.com/spreadsheets/d/e/2PACX-1vTiOO_C_FHe7QeNPitUx6BXkkJWgQ0yVXJdThwVciqR6bKW9URZ0gSQDrdk88E9zxlIEpiYNVWG9wp9/pub?output=csv")
+ENGLISH_STATE_FILE = Path("state_english.json")
+ARABIC_STATE_FILE  = Path("state_arabic.json")
 WORDS_PER_REEL = 5
+ARABIC_WORDS_PER_REEL = 7
+FFMPEG_BIN = shutil.which("ffmpeg")
+if not FFMPEG_BIN:
+    for candidate in ("/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg"):
+        if Path(candidate).exists():
+            FFMPEG_BIN = candidate
+            break
+if FFMPEG_BIN:
+    ffmpeg_dir = str(Path(FFMPEG_BIN).parent)
+    os.environ["PATH"] = ffmpeg_dir + os.pathsep + os.environ.get("PATH", "")
+FFPROBE_BIN = shutil.which("ffprobe")
+if not FFPROBE_BIN:
+    for candidate in ("/opt/homebrew/bin/ffprobe", "/usr/local/bin/ffprobe"):
+        if Path(candidate).exists():
+            FFPROBE_BIN = candidate
+            break
 
 ARABIC_FONT_CANDIDATES = [
     FONTS_DIR / "Amiri-Regular.ttf",
@@ -113,13 +130,20 @@ IMG_W, IMG_H = 1080, 1920  # 9:16 portrait — required for YouTube Shorts
 PAUSE_AFTER_ARABIC  = 600   # between Arabic and English of the same pair
 PAUSE_AFTER_ENGLISH = 1200  # between one pair and the next
 
-# Azure Speech TTS for Egyptian Arabic. If key/region are missing, Arabic falls
-# back to gTTS so local previews and CI still run. Recommended voices:
-#   ar-EG-SalmaNeural   female
-#   ar-EG-ShakirNeural  male
-AZURE_SPEECH_KEY    = os.getenv("AZURE_SPEECH_KEY", "")
-AZURE_SPEECH_REGION = os.getenv("AZURE_SPEECH_REGION", "")
-AZURE_ARABIC_VOICE  = os.getenv("AZURE_ARABIC_VOICE", "ar-EG-SalmaNeural")
+# Gemini is the preferred Arabic TTS provider. If GEMINI_API_KEY is missing,
+# Arabic falls back to regular gTTS so local previews can still run.
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+GEMINI_TTS_MODEL = os.getenv("GEMINI_TTS_MODEL", "gemini-3.1-flash-tts-preview")
+GEMINI_TTS_VOICE = os.getenv("GEMINI_TTS_VOICE", "Achird")
+GEMINI_REEL_PROMPT_PREFIX = os.getenv(
+    "GEMINI_REEL_PROMPT_PREFIX",
+    "Fast friendly Egyptian Arabic lesson. For each item, say the English once, "
+    "then pronounce the Egyptian Arabic twice. Speak clearly at a natural learning pace. "
+    "Use brief pauses between repeats. Keep the full audio around 34 "
+    "seconds. Avoid formal Arabic pronunciation. List:\n"
+)
+GEMINI_TTS_MAX_RETRIES = int(os.getenv("GEMINI_TTS_MAX_RETRIES", "2"))
+GEMINI_TTS_RETRY_DELAY_SECONDS = int(os.getenv("GEMINI_TTS_RETRY_DELAY_SECONDS", "65"))
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -152,6 +176,11 @@ from pydub import AudioSegment
 import arabic_reshaper
 from bidi.algorithm import get_display
 
+if FFMPEG_BIN:
+    AudioSegment.converter = FFMPEG_BIN
+if FFPROBE_BIN:
+    AudioSegment.ffprobe = FFPROBE_BIN
+
 if UPLOAD_TO_YOUTUBE:
     _require("googleapiclient",       "google-api-python-client")
     _require("google_auth_oauthlib",  "google-auth-oauthlib")
@@ -170,17 +199,19 @@ if UPLOAD_TO_YOUTUBE:
 
 def check_ffmpeg():
     """Confirm FFmpeg is on PATH before we start, so we fail early."""
-    try:
-        subprocess.run(
-            ["ffmpeg", "-version"],
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True
-        )
-    except (FileNotFoundError, subprocess.CalledProcessError):
+    if not FFMPEG_BIN:
         sys.exit(
             "\n  FFmpeg not found!\n"
             "  Install it with Homebrew:\n"
             "    brew install ffmpeg\n"
         )
+    try:
+        subprocess.run(
+            [FFMPEG_BIN, "-version"],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True
+        )
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        sys.exit(f"\n  FFmpeg exists but failed to run: {FFMPEG_BIN}\n")
 
 
 def load_font(candidates: list, size: int) -> ImageFont.FreeTypeFont:
@@ -235,7 +266,7 @@ def fetch_sheet_words(csv_url: str) -> list:
     """
     Download a Google Sheet published as CSV and return all word pairs.
     The sheet must have two columns with headers: arabic, english
-    Optional third column: level
+    Optional columns: level, pronunciation
     Publish via: File → Share → Publish to web → select sheet → CSV → Publish
     """
     try:
@@ -252,6 +283,7 @@ def fetch_sheet_words(csv_url: str) -> list:
     arabic_col = header_lookup.get("arabic")
     english_col = header_lookup.get("english")
     level_col = header_lookup.get("level")
+    pronunciation_col = header_lookup.get("pronunciation")
 
     if not arabic_col or not english_col:
         seen = ", ".join(headers) if headers else "(none)"
@@ -267,8 +299,9 @@ def fetch_sheet_words(csv_url: str) -> list:
         ar = row.get(arabic_col, "").strip()
         en = row.get(english_col, "").strip()
         level = row.get(level_col, "").strip() if level_col else ""
+        pronunciation = row.get(pronunciation_col, "").strip() if pronunciation_col else ""
         if ar and en:
-            pairs.append((ar, en, level))
+            pairs.append((ar, en, level, pronunciation))
 
     if not pairs:
         sys.exit(
@@ -280,24 +313,38 @@ def fetch_sheet_words(csv_url: str) -> list:
     return pairs
 
 
-def load_next_batch(all_pairs: list) -> tuple:
+def load_next_batch(all_pairs: list, words_per_reel: int = WORDS_PER_REEL,
+                    include_pronunciation: bool = False,
+                    state_file: Path = ENGLISH_STATE_FILE) -> tuple:
     """
-    Read state.json to find the current position, return the next WORDS_PER_REEL
-    pairs and the level from the first row. Wraps around when the list ends.
+    Read the state file to find the current position and return the next batch.
+    State is written only after a successful upload, so previews/dry runs do not
+    consume words.
     """
-    state = json.loads(STATE_FILE.read_text()) if STATE_FILE.exists() else {"next_index": 0}
+    state = json.loads(state_file.read_text()) if state_file.exists() else {"next_index": 0}
     idx   = state["next_index"] % len(all_pairs)
 
-    batch    = (all_pairs * 2)[idx : idx + WORDS_PER_REEL]
-    next_idx = (idx + WORDS_PER_REEL) % len(all_pairs)
+    batch    = (all_pairs * 2)[idx : idx + words_per_reel]
+    next_idx = (idx + words_per_reel) % len(all_pairs)
 
-    STATE_FILE.write_text(json.dumps({"next_index": next_idx}, indent=2))
     print(f"  Batch: words {idx + 1}–{idx + len(batch)} of {len(all_pairs)} "
           f"(next run starts at {next_idx + 1})")
 
     level      = batch[0][2] if batch and batch[0][2] else "متوسط"
-    word_pairs = [(ar, en) for ar, en, _ in batch]
-    return word_pairs, level
+    if include_pronunciation:
+        word_pairs = [
+            (row[0], row[1], row[3])
+            for row in batch
+        ]
+    else:
+        word_pairs = [(row[0], row[1]) for row in batch]
+    return word_pairs, level, next_idx
+
+
+def save_next_index(state_file: Path, next_idx: int) -> None:
+    """Persist the next sheet row index after a successful upload."""
+    state_file.write_text(json.dumps({"next_index": next_idx}, indent=2) + "\n")
+    print(f"  State saved → {state_file}")
 
 
 def build_metadata(word_pairs: list) -> tuple:
@@ -374,6 +421,62 @@ Follow us for 5 new English words every day!
     return title, desc, tags
 
 
+def build_arabic_words_metadata(word_pairs: list) -> tuple:
+    import random
+
+    title_variations = [
+        "7 everyday Egyptian Arabic words 🇪🇬 #Shorts",
+        "Egyptian Arabic for beginners: 7 words #Shorts",
+        "Learn 7 common Egyptian Arabic words #Shorts",
+        "7 useful Egyptian Arabic words #Shorts",
+        "Egyptian Arabic for beginners 🇪🇬 #Shorts",
+        "Common Egyptian Arabic vocabulary #Shorts",
+        "7 words in Egyptian Arabic #Shorts",
+        "Simple Egyptian Arabic vocabulary #Shorts",
+        "Egyptian Arabic words with pronunciation #Shorts",
+        "Beginner Egyptian Arabic: 7 words #Shorts",
+    ]
+    title = random.choice(title_variations)
+
+    def format_row(row):
+        arabic, english = row[0], row[1]
+        pronunciation = row[2] if len(row) > 2 and row[2] else ""
+        if pronunciation:
+            return f"• {arabic} ({pronunciation}) — {english}"
+        return f"• {arabic} — {english}"
+
+    word_list = "\n".join(format_row(row) for row in word_pairs)
+
+    desc = f"""Learn 7 everyday Egyptian Arabic words with English meanings.
+
+{word_list}
+
+Simple Egyptian Arabic vocabulary with pronunciation for beginners.
+
+#EgyptianArabic #LearnArabic #ArabicForBeginners #ArabicVocabulary #EgyptianDialect #SpeakArabic #ArabicLesson #LearnEgyptianArabic #Shorts #YouTubeShorts"""
+
+    tags = [
+        "egyptian arabic",
+        "learn arabic",
+        "arabic words",
+        "arabic vocabulary",
+        "arabic for beginners",
+        "egyptian dialect",
+        "learn egyptian arabic",
+        "speak arabic",
+        "arabic lesson",
+        "arabic pronunciation",
+        "egyptian arabic for beginners",
+        "egyptian arabic words",
+        "daily arabic",
+        "arabic shorts",
+        "language learning",
+        "shorts",
+        "youtube shorts",
+    ]
+    return title, desc, tags
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # ❼  IMAGE GENERATION
 # ══════════════════════════════════════════════════════════════════════════════
@@ -388,6 +491,7 @@ _PILL_X2       = 644    # pill right edge
 _PILL_Y2       = 652    # pill bottom edge
 
 BACKGROUND_IMG = Path("assets") / "background.png"
+ARABIC_WORDS_BACKGROUND_IMG = Path("assets") / "image.png"
 
 
 def create_image(word_pairs: list, level: str, output_path: Path) -> Path:
@@ -442,12 +546,53 @@ def create_image(word_pairs: list, level: str, output_path: Path) -> Path:
     rgb.save(str(output_path))
     print(f"  Saved  → {output_path}")
 
-    PREVIEWS_DIR.mkdir(parents=True, exist_ok=True)
-    ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    preview_path = PREVIEWS_DIR / f"preview_{ts}.png"
-    rgb.save(str(preview_path))
-    print(f"  Preview → {preview_path}")
+    return output_path
 
+
+def create_arabic_words_image(word_pairs: list, level: str, output_path: Path) -> Path:
+    """
+    Render the newer "learn 7 Arabic words" card.
+    Uses a separate background so the existing 5-English-words design is untouched.
+    """
+    print("  Creating Arabic words image…")
+
+    if not ARABIC_WORDS_BACKGROUND_IMG.exists():
+        sys.exit(
+            f"\n  Arabic words background image not found: {ARABIC_WORDS_BACKGROUND_IMG}\n"
+            "  Place the Arabic words background PNG at assets/image.png\n"
+        )
+
+    bg = Image.open(str(ARABIC_WORDS_BACKGROUND_IMG)).resize((IMG_W, IMG_H), Image.LANCZOS)
+    img = bg.convert("RGBA")
+    draw = ImageDraw.Draw(img)
+
+    NAVY = (13, 27, 75)
+    RUST = (144, 63, 22)
+    english_font = load_font(BOLD_FONT_CANDIDATES, 30)
+    arabic_font = load_font(ARABIC_FONT_CANDIDATES, 34)
+    pronunciation_font = load_font(BOLD_FONT_CANDIDATES, 30)
+
+    # assets/image.png has a three-column table. It visually contains 6 row
+    # bands, so 7 words are packed evenly within the full table body.
+    row_y = [870 + (i * 130) for i in range(ARABIC_WORDS_PER_REEL)]
+    english_x = 200
+    arabic_x = 535
+    pronunciation_x = 865
+
+    for i, row in enumerate(word_pairs[:ARABIC_WORDS_PER_REEL]):
+        y = row_y[i]
+        ar, en = row[0], row[1]
+        pronunciation = row[2] if len(row) > 2 else ""
+
+        draw.text((english_x, y), en, font=english_font, fill=NAVY, anchor="mm")
+        draw_arabic_text(draw, (arabic_x, y), ar, font=arabic_font, fill=NAVY)
+        draw.text((pronunciation_x, y), pronunciation,
+                  font=pronunciation_font, fill=RUST, anchor="mm")
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    rgb = img.convert("RGB")
+    rgb.save(str(output_path))
+    print(f"  Saved  → {output_path}")
     return output_path
 
 
@@ -455,135 +600,147 @@ def create_image(word_pairs: list, level: str, output_path: Path) -> Path:
 # ❼  AUDIO GENERATION
 # ══════════════════════════════════════════════════════════════════════════════
 
-GTTS_TEST_WORDS = [
-    # (English, Arabic, pronunciation guide)
-    ("Please", "من فضلك", "Min fadlak"),
-    ("Thank you", "شكراً", "Shokran"),
+SAMPLE_ARABIC_WORDS = [
+    # (English meaning, Egyptian Arabic, pronunciation guide) for local previews
+    ("Water", "مَيَّه", "Mayya"),
+    ("Bread", "عيش", "Eish"),
     ("House", "بيت", "Beit"),
+    ("Door", "باب", "Bab"),
+    ("Window", "شباك", "Shebbak"),
+    ("Street", "شارع", "Share'"),
+    ("Car", "عربية", "Arabeyya"),
 ]
 
 
-def test_gtts_pronunciation(output_dir: Path = OUTPUT_DIR / "gtts_tests") -> Path:
-    """
-    Generate small sample MP3 files so you can hear how gTTS pronounces
-    common Arabic words/phrases before using them in reels.
-    """
-    print("  Generating gTTS pronunciation test clips…")
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    manifest_lines = ["English\tArabic\tPronunciation\tArabic MP3\tEnglish MP3"]
-    for i, (english, arabic, pronunciation) in enumerate(GTTS_TEST_WORDS, start=1):
-        stem = f"{i:02d}_{english.lower().replace(' ', '_')}"
-        arabic_path = output_dir / f"{stem}_ar.mp3"
-        english_path = output_dir / f"{stem}_en.mp3"
-
-        print(f"    [{i}/{len(GTTS_TEST_WORDS)}] {english} / {arabic} ({pronunciation})")
-        try:
-            gTTS(text=arabic, lang="ar", slow=True).save(str(arabic_path))
-            time.sleep(0.35)
-            gTTS(text=english, lang="en").save(str(english_path))
-            time.sleep(0.35)
-        except Exception as exc:
-            sys.exit(f"\n  gTTS pronunciation test failed for '{arabic}': {exc}\n"
-                     "  Check your internet connection and try again.\n")
-
-        manifest_lines.append(
-            f"{english}\t{arabic}\t{pronunciation}\t{arabic_path.name}\t{english_path.name}"
-        )
-
-    manifest_path = output_dir / "manifest.tsv"
-    manifest_path.write_text("\n".join(manifest_lines) + "\n", encoding="utf-8")
-    print(f"  Saved clips → {output_dir}")
-    print(f"  Manifest   → {manifest_path}")
-    return output_dir
+def gemini_tts_enabled() -> bool:
+    return bool(GEMINI_API_KEY)
 
 
-def azure_tts_enabled() -> bool:
-    return bool(AZURE_SPEECH_KEY and AZURE_SPEECH_REGION)
+def write_wave_file(filename: Path, pcm: bytes,
+                    channels: int = 1, rate: int = 24000,
+                    sample_width: int = 2) -> None:
+    """Save Gemini PCM audio as a WAV file."""
+    import wave
+
+    filename.parent.mkdir(parents=True, exist_ok=True)
+    with wave.open(str(filename), "wb") as wf:
+        wf.setnchannels(channels)
+        wf.setsampwidth(sample_width)
+        wf.setframerate(rate)
+        wf.writeframes(pcm)
 
 
-def synthesize_arabic_azure(text: str, output_path: Path,
-                            voice: str = AZURE_ARABIC_VOICE) -> Path:
-    """Synthesize Arabic with Azure Speech using an Egyptian Arabic voice."""
-    if not azure_tts_enabled():
+def synthesize_gemini_prompt(prompt: str, output_path: Path) -> Path:
+    """Synthesize speech with Gemini TTS from a complete prompt."""
+    if not gemini_tts_enabled():
         sys.exit(
-            "\n  Azure Speech is not configured.\n"
-            "  Set AZURE_SPEECH_KEY and AZURE_SPEECH_REGION, then try again.\n"
+            "\n  Gemini TTS is not configured.\n"
+            "  Set GEMINI_API_KEY, then try again.\n"
         )
 
-    speechsdk = _require(
-        "azure.cognitiveservices.speech",
-        "azure-cognitiveservices-speech"
-    )
+    genai = _require("google.genai", "google-genai")
+    types = _require("google.genai.types", "google-genai")
 
-    speech_config = speechsdk.SpeechConfig(
-        subscription=AZURE_SPEECH_KEY,
-        region=AZURE_SPEECH_REGION,
-    )
-    speech_config.speech_synthesis_voice_name = voice
-    speech_config.set_speech_synthesis_output_format(
-        speechsdk.SpeechSynthesisOutputFormat.Audio16Khz32KBitRateMonoMp3
-    )
-
-    audio_config = speechsdk.audio.AudioOutputConfig(filename=str(output_path))
-    synthesizer = speechsdk.SpeechSynthesizer(
-        speech_config=speech_config,
-        audio_config=audio_config,
-    )
-
-    result = synthesizer.speak_text_async(text).get()
-    if result.reason == speechsdk.ResultReason.SynthesizingAudioCompleted:
-        return output_path
-
-    if result.reason == speechsdk.ResultReason.Canceled:
-        details = result.cancellation_details
-        raise RuntimeError(
-            f"Azure Speech canceled synthesis: {details.reason}; "
-            f"{details.error_details}"
-        )
-
-    raise RuntimeError(f"Azure Speech failed with result reason: {result.reason}")
-
-
-def test_azure_pronunciation(output_dir: Path = OUTPUT_DIR / "azure_tts_tests") -> Path:
-    """Generate Egyptian Arabic Azure TTS samples for quick listening tests."""
-    print(f"  Generating Azure Egyptian Arabic clips with {AZURE_ARABIC_VOICE}…")
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    manifest_lines = ["English\tArabic\tPronunciation\tVoice\tArabic MP3"]
-    for i, (english, arabic, pronunciation) in enumerate(GTTS_TEST_WORDS, start=1):
-        stem = f"{i:02d}_{english.lower().replace(' ', '_')}"
-        arabic_path = output_dir / f"{stem}_azure_ar.mp3"
-
-        print(f"    [{i}/{len(GTTS_TEST_WORDS)}] {english} / {arabic} ({pronunciation})")
+    client = genai.Client(api_key=GEMINI_API_KEY)
+    last_exc = None
+    for attempt in range(GEMINI_TTS_MAX_RETRIES + 1):
         try:
-            synthesize_arabic_azure(arabic, arabic_path)
-            time.sleep(0.2)
+            response = client.models.generate_content(
+                model=GEMINI_TTS_MODEL,
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    response_modalities=["AUDIO"],
+                    speech_config=types.SpeechConfig(
+                        voice_config=types.VoiceConfig(
+                            prebuilt_voice_config=types.PrebuiltVoiceConfig(
+                                voice_name=GEMINI_TTS_VOICE,
+                            )
+                        )
+                    )
+                ),
+            )
+            break
         except Exception as exc:
-            sys.exit(f"\n  Azure pronunciation test failed for '{arabic}': {exc}\n")
+            last_exc = exc
+            is_rate_limited = "429" in str(exc) or "quota" in str(exc).lower()
+            if not is_rate_limited or attempt >= GEMINI_TTS_MAX_RETRIES:
+                raise
 
-        manifest_lines.append(
-            f"{english}\t{arabic}\t{pronunciation}\t{AZURE_ARABIC_VOICE}\t{arabic_path.name}"
+            print(
+                f"      Gemini quota/rate limit hit; waiting "
+                f"{GEMINI_TTS_RETRY_DELAY_SECONDS}s before retry "
+                f"{attempt + 1}/{GEMINI_TTS_MAX_RETRIES}..."
+            )
+            time.sleep(GEMINI_TTS_RETRY_DELAY_SECONDS)
+    else:
+        raise last_exc
+
+    try:
+        data = response.candidates[0].content.parts[0].inline_data.data
+    except Exception as exc:
+        raise RuntimeError(f"Gemini TTS returned no audio: {response}") from exc
+
+    write_wave_file(output_path, data)
+    return output_path
+
+
+def build_gemini_sequence_prompt(word_pairs: list) -> str:
+    """Build one prompt that asks Gemini to read all vocabulary pairs in order."""
+    lines = []
+    for i, row in enumerate(word_pairs, start=1):
+        arabic, english = row[0], row[1]
+        pronunciation = row[2] if len(row) > 2 and row[2] else ""
+        if pronunciation:
+            lines.append(f"{i}. {english} - {arabic} ({pronunciation}) - {arabic} ({pronunciation})")
+        else:
+            lines.append(f"{i}. {english} - {arabic} - {arabic}")
+    return GEMINI_REEL_PROMPT_PREFIX + "\n".join(lines)
+
+
+def synthesize_gemini_sequence(word_pairs: list, output_path: Path) -> Path:
+    """Synthesize the full reel voiceover in a single Gemini request."""
+    return synthesize_gemini_prompt(build_gemini_sequence_prompt(word_pairs), output_path)
+
+
+def create_arabic_vocab_audio(word_pairs: list, output_path: Path) -> Path:
+    """
+    Build the newer "learn Arabic words" voiceover in one Gemini request.
+    word_pairs are still shaped as (Arabic, English), matching the sheet flow.
+    """
+    if not gemini_tts_enabled():
+        sys.exit(
+            "\n  Gemini TTS is required for ARABIC_WORDS_REEL=true.\n"
+            "  Set GEMINI_API_KEY, then try again.\n"
         )
 
-    manifest_path = output_dir / "manifest.tsv"
-    manifest_path.write_text("\n".join(manifest_lines) + "\n", encoding="utf-8")
-    print(f"  Saved clips → {output_dir}")
-    print(f"  Manifest   → {manifest_path}")
-    return output_dir
+    print("  Generating audio… Arabic words reel TTS: Gemini")
+    with tempfile.TemporaryDirectory() as tmp:
+        sequence_path = Path(tmp) / "gemini_sequence.wav"
+        try:
+            synthesize_gemini_sequence(word_pairs, sequence_path)
+        except Exception as exc:
+            sys.exit(f"\n  Gemini TTS failed for Arabic words sequence: {exc}\n"
+                     "  Check your Gemini quota/key and try again.\n")
+
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        combined = AudioSegment.from_file(sequence_path)
+        combined.export(str(output_path), format="mp3")
+
+    duration_s = len(combined) / 1000
+    print(f"  Saved  → {output_path}  ({duration_s:.1f} s)")
+    return output_path
 
 
-def create_audio(word_pairs: list, output_path: Path) -> Path:
+def create_english_vocab_audio(word_pairs: list, output_path: Path) -> Path:
     """
-    Build an MP3 voiceover by concatenating TTS clips:
-      Arabic (slow) → 0.6 s pause → English → 1.2 s pause → (next pair) …
+    Build the original "learn 5 English words" MP3 voiceover with gTTS:
+      Arabic (slow) → 0.6 s pause → English → 1.2 s pause → next pair.
 
     Each TTS call makes an HTTP request, so:
       • You need an internet connection.
       • A small sleep between calls avoids hitting provider rate limits.
     """
-    arabic_tts_source = "Azure Speech" if azure_tts_enabled() else "gTTS"
-    print(f"  Generating audio… Arabic TTS: {arabic_tts_source}")
+    print("  Generating audio… English vocab reel TTS: gTTS")
 
     silence_short = AudioSegment.silent(duration=PAUSE_AFTER_ARABIC)
     silence_long  = AudioSegment.silent(duration=PAUSE_AFTER_ENGLISH)
@@ -596,10 +753,7 @@ def create_audio(word_pairs: list, output_path: Path) -> Path:
             # ── Arabic clip ────────────────────────────────────────────────
             ar_path = os.path.join(tmp, f"ar_{i}.mp3")
             try:
-                if azure_tts_enabled():
-                    synthesize_arabic_azure(ar, Path(ar_path))
-                else:
-                    gTTS(text=ar, lang="ar", slow=True).save(ar_path)
+                gTTS(text=ar, lang="ar", slow=True).save(ar_path)
             except Exception as exc:
                 sys.exit(f"\n  Arabic TTS failed for word '{ar}': {exc}\n"
                          "  Check your internet connection and try again.\n")
@@ -645,7 +799,7 @@ def create_video(image_path: Path, audio_path: Path, output_path: Path) -> Path:
     print(f"  Audio duration: {duration_s:.2f}s — video will match exactly")
 
     cmd = [
-        "ffmpeg", "-y",
+        FFMPEG_BIN, "-y",
         "-loop", "1",
         "-framerate", "1",
         "-i", str(image_path),
@@ -666,13 +820,6 @@ def create_video(image_path: Path, audio_path: Path, output_path: Path) -> Path:
         sys.exit("\n  FFmpeg failed — see the error above.\n")
 
     print(f"  Saved  → {output_path}")
-
-    # Save a timestamped copy to videos/ for review
-    VIDEOS_DIR.mkdir(parents=True, exist_ok=True)
-    ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    review_path = VIDEOS_DIR / f"reel_{ts}.mp4"
-    shutil.copy2(str(output_path), str(review_path))
-    print(f"  Review  → {review_path}")
 
     return output_path
 
@@ -784,81 +931,108 @@ def upload_to_youtube(video_path: Path, youtube,
 # ⓫  MAIN  ── orchestrates the full pipeline
 # ══════════════════════════════════════════════════════════════════════════════
 
-def main():
-    print("\n" + "═" * 56)
-    print("  VocabReelGenerator")
-    print("═" * 56 + "\n")
+def run_reel(arabic_words_reel: bool, youtube=None) -> Path:
+    """Generate one reel type and optionally upload it."""
+    reel_name = "Arabic words" if arabic_words_reel else "English vocab"
+    output_stem = "arabic_words" if arabic_words_reel else "english_vocab"
 
-    if TEST_GTTS:
-        test_gtts_pronunciation()
-        print("\n" + "═" * 56 + "\n")
-        return
+    print("\n" + "─" * 56)
+    print(f"  {reel_name} reel")
+    print("─" * 56 + "\n")
 
-    if TEST_AZURE_TTS:
-        test_azure_pronunciation()
-        print("\n" + "═" * 56 + "\n")
-        return
+    words_per_reel = ARABIC_WORDS_PER_REEL if arabic_words_reel else WORDS_PER_REEL
+    sheet_csv_url = ARABIC_SHEET_CSV_URL if arabic_words_reel else SHEET_CSV_URL
+    state_file = ARABIC_STATE_FILE if arabic_words_reel else ENGLISH_STATE_FILE
+    next_idx = None
 
-    # ── Resolve word pairs ─────────────────────────────────────────────────
-    # Automated run (GitHub Actions): fetch from Google Sheet + advance state
-    # Local run: use WORD_PAIRS hardcoded above
-    if SHEET_CSV_URL:
+    if sheet_csv_url:
         print("  Source: Google Sheet")
-        all_pairs          = fetch_sheet_words(SHEET_CSV_URL)
-        word_pairs, level  = load_next_batch(all_pairs)
+        all_pairs = fetch_sheet_words(sheet_csv_url)
+        word_pairs, level, next_idx = load_next_batch(
+            all_pairs,
+            words_per_reel,
+            include_pronunciation=arabic_words_reel,
+            state_file=state_file,
+        )
     else:
-        print("  Source: hardcoded WORD_PAIRS")
-        word_pairs = WORD_PAIRS
-        level      = "متوسط"
+        print("  Source: hardcoded sample words")
+        if arabic_words_reel:
+            word_pairs = [
+                (arabic, english, pronunciation)
+                for english, arabic, pronunciation
+                in SAMPLE_ARABIC_WORDS[:words_per_reel]
+            ]
+        else:
+            word_pairs = WORD_PAIRS[:words_per_reel]
+        level = "متوسط"
 
     if not word_pairs:
         sys.exit("  Error: no word pairs to process.\n")
 
-    yt_title, yt_desc, yt_tags = build_metadata(word_pairs)
+    if arabic_words_reel:
+        yt_title, yt_desc, yt_tags = build_arabic_words_metadata(word_pairs)
+    else:
+        yt_title, yt_desc, yt_tags = build_metadata(word_pairs)
     print()
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    image_path = OUTPUT_DIR / f"{output_stem}_image.png"
+    audio_path = OUTPUT_DIR / f"{output_stem}_audio.mp3"
+    video_path = OUTPUT_DIR / f"{output_stem}_reel.mp4"
 
-    image_path = OUTPUT_DIR / "vocab_image.png"
-    audio_path = OUTPUT_DIR / "vocab_audio.mp3"
-    video_path = OUTPUT_DIR / "vocab_reel.mp4"
-
-    # ── Step 1: Image ──────────────────────────────────────────────────────
     print("Step 1/4 — Rendering image")
-    create_image(word_pairs, level, image_path)
+    if arabic_words_reel:
+        create_arabic_words_image(word_pairs, level, image_path)
+    else:
+        create_image(word_pairs, level, image_path)
     print()
 
-    # ── Preview-only mode: stop here ───────────────────────────────────────
     if PREVIEW_ONLY:
         print("  PREVIEW_ONLY=true — skipping audio, video, and upload.")
-        print("  Image saved in previews/  ← open that folder to review.")
-        print("\n" + "═" * 56 + "\n")
-        return
+        print(f"  Image saved → {image_path}")
+        return image_path
 
-    # ── Pre-flight check for FFmpeg ────────────────────────────────────────
     check_ffmpeg()
 
-    # ── Step 2: Audio ──────────────────────────────────────────────────────
     print("Step 2/4 — Generating voiceover")
-    create_audio(word_pairs, audio_path)
+    if arabic_words_reel:
+        create_arabic_vocab_audio(word_pairs, audio_path)
+    else:
+        create_english_vocab_audio(word_pairs, audio_path)
     print()
 
-    # ── Step 3: Video ──────────────────────────────────────────────────────
     print("Step 3/4 — Building MP4")
     create_video(image_path, audio_path, video_path)
     print()
 
     print(f"  Video ready: {video_path}\n")
 
-    # ── Step 4: Upload ─────────────────────────────────────────────────────
     if UPLOAD_TO_YOUTUBE:
         print("Step 4/4 — Uploading to YouTube")
-        youtube = authenticate_youtube()
+        youtube = youtube or authenticate_youtube()
         url = upload_to_youtube(video_path, youtube, yt_title, yt_desc, yt_tags)
+        if next_idx is not None:
+            save_next_index(state_file, next_idx)
         print(f"\n  Done! Your Short is at:\n  {url}")
         print(f"  (Privacy: '{PRIVACY_STATUS}')\n")
     else:
         print("Step 4/4 — YouTube upload skipped (UPLOAD_TO_YOUTUBE not set)\n")
+
+    return video_path
+
+
+def main():
+    print("\n" + "═" * 56)
+    print("  VocabReelGenerator")
+    print("═" * 56 + "\n")
+
+    youtube = authenticate_youtube() if UPLOAD_TO_YOUTUBE else None
+
+    if RUN_BOTH_REELS:
+        run_reel(False, youtube=youtube)
+        run_reel(True, youtube=youtube)
+    else:
+        run_reel(ARABIC_WORDS_REEL, youtube=youtube)
 
     print("═" * 56 + "\n")
 
