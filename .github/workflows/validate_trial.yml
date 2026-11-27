@@ -1,0 +1,36 @@
+name: Validate two-a-day trial (no upload)
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  dry-run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - run: sudo apt-get update -qq && sudo apt-get install -y ffmpeg fonts-hosny-amiri fonts-noto-core fonts-liberation
+      - run: pip install -r requirements.txt pytest
+      - run: python -m pytest -q tests
+      - name: Generate both trial previews without YouTube credentials
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_TTS_MODEL: gemini-3.8-flash-tts
+          GEMINI_TTS_VOICE: Achird
+          GEMINI_TTS_MAX_RETRIES: '1'
+          TRIAL_ACTIVE: 'true'
+          TRIAL_DATE: '2026-11-27'
+          UPLOAD_TO_YOUTUBE: 'false'
+          RUN_BOTH_REELS: 'true'
+        run: python generate_reel.py
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: two-a-day-reviewed-preview
+          path: outputs/*
+      - name: Verify preview did not consume source or trial state
+        run: git diff --exit-code -- state_english.json state_arabic.json experiments/two-a-day-2026-11-27/uploads.json

@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "youtube-channel-mcp"
+version = "0.1.0"
+description = "Direct Google OAuth YouTube channel tools over MCP stdio"
+requires-python = ">=3.10"
+dependencies = ["mcp>=1.28,<2", "google-api-python-client>=2.100,<3", "google-auth-oauthlib>=1.1,<2"]
+
+[project.optional-dependencies]
+test = ["pytest>=8,<10"]
+
+[project.scripts]
+youtube-channel-mcp = "youtube_channel_mcp.server:main"
+youtube-channel-auth = "youtube_channel_mcp.auth:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

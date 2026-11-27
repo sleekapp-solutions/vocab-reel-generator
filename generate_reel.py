@@ -133,14 +133,14 @@ PAUSE_AFTER_ENGLISH = 1200  # between one pair and the next
 # Gemini is the preferred Arabic TTS provider. If GEMINI_API_KEY is missing,
 # Arabic falls back to regular gTTS so local previews can still run.
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-GEMINI_TTS_MODEL = os.getenv("GEMINI_TTS_MODEL", "gemini-3.1-flash-tts-preview")
+GEMINI_TTS_MODEL = os.getenv("GEMINI_TTS_MODEL", "gemini-3.8-flash-tts")
 GEMINI_TTS_VOICE = os.getenv("GEMINI_TTS_VOICE", "Achird")
 GEMINI_REEL_PROMPT_PREFIX = os.getenv(
     "GEMINI_REEL_PROMPT_PREFIX",
-    "Fast friendly Egyptian Arabic lesson. For each item, say the English once, "
-    "then pronounce the Egyptian Arabic twice. Speak clearly at a natural learning pace. "
-    "Use brief pauses between repeats. Keep the full audio around 34 "
-    "seconds. Avoid formal Arabic pronunciation. List:\n"
+    "Friendly everyday Egyptian Arabic lesson with a natural Egyptian accent. "
+    "Read English in clear English and Arabic in colloquial Egyptian pronunciation as written. "
+    "Use brief pauses between items and repeats. Clear teaching pace without rushing. "
+    "Read only the transcript, without headings, numbering, commentary or romanization."
 )
 GEMINI_TTS_MAX_RETRIES = int(os.getenv("GEMINI_TTS_MAX_RETRIES", "2"))
 GEMINI_TTS_RETRY_DELAY_SECONDS = int(os.getenv("GEMINI_TTS_RETRY_DELAY_SECONDS", "65"))
@@ -494,6 +494,40 @@ BACKGROUND_IMG = Path("assets") / "background.png"
 ARABIC_WORDS_BACKGROUND_IMG = Path("assets") / "image.png"
 
 
+def fitted_lines(draw, text, font_candidates, max_size, width, arabic=False, max_lines=3):
+    """Fit complete phrases within a card without truncation or overlapping columns."""
+    def measure(value, font):
+        if arabic and features.check("raqm"):
+            return draw.textlength(value, font=font, direction="rtl", language="ar")
+        return draw.textlength(arabic_display(value) if arabic else value, font=font)
+    for size in range(max_size, 19, -1):
+        font = load_font(font_candidates, size)
+        lines, current = [], ""
+        for word in text.split():
+            candidate = (current + " " + word).strip()
+            if current and measure(candidate, font) > width:
+                lines.append(current)
+                current = word
+            else:
+                current = candidate
+        if current:
+            lines.append(current)
+        if len(lines) <= max_lines and all(measure(line, font) <= width for line in lines):
+            return lines, font, size
+    raise ValueError("Vocabulary phrase does not fit its card; shorten the source before publishing.")
+
+
+def draw_fitted(draw, xy, text, candidates, size, width, fill, arabic=False):
+    lines, font, actual_size = fitted_lines(draw, text, candidates, size, width, arabic)
+    step = actual_size + 8
+    for index, line in enumerate(lines):
+        position = (xy[0], xy[1] + (index - (len(lines) - 1) / 2) * step)
+        if arabic:
+            draw_arabic_text(draw, position, line, font, fill)
+        else:
+            draw.text(position, line, font=font, fill=fill, anchor="mm")
+
+
 def create_image(word_pairs: list, level: str, output_path: Path) -> Path:
     """
     Loads the designer background, then overlays word pairs and the level pill.
@@ -533,12 +567,10 @@ def create_image(word_pairs: list, level: str, output_path: Path) -> Path:
         mid_y = _CARD_Y[i]
 
         # English word — centred in the left card half
-        draw.text((_EN_CENTER_X, mid_y), en,
-                  font=english_font, fill=NAVY, anchor="mm")
+        draw_fitted(draw, (_EN_CENTER_X, mid_y), en, BOLD_FONT_CANDIDATES, 62, 350, NAVY)
 
         # Arabic word — centred in the right card half
-        draw_arabic_text(draw, (_AR_CENTER_X, mid_y), ar,
-                         font=arabic_font, fill=NAVY)
+        draw_fitted(draw, (_AR_CENTER_X, mid_y), ar, ARABIC_FONT_CANDIDATES, 58, 400, NAVY, True)
 
     # ── Save ───────────────────────────────────────────────────────────────
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -584,10 +616,9 @@ def create_arabic_words_image(word_pairs: list, level: str, output_path: Path) -
         ar, en = row[0], row[1]
         pronunciation = row[2] if len(row) > 2 else ""
 
-        draw.text((english_x, y), en, font=english_font, fill=NAVY, anchor="mm")
-        draw_arabic_text(draw, (arabic_x, y), ar, font=arabic_font, fill=NAVY)
-        draw.text((pronunciation_x, y), pronunciation,
-                  font=pronunciation_font, fill=RUST, anchor="mm")
+        draw_fitted(draw, (english_x, y), en, BOLD_FONT_CANDIDATES, 30, 280, NAVY)
+        draw_fitted(draw, (arabic_x, y), ar, ARABIC_FONT_CANDIDATES, 34, 300, NAVY, True)
+        draw_fitted(draw, (pronunciation_x, y), pronunciation, BOLD_FONT_CANDIDATES, 30, 280, RUST)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     rgb = img.convert("RGB")
@@ -631,70 +662,20 @@ def write_wave_file(filename: Path, pcm: bytes,
 
 
 def synthesize_gemini_prompt(prompt: str, output_path: Path) -> Path:
-    """Synthesize speech with Gemini TTS from a complete prompt."""
-    if not gemini_tts_enabled():
-        sys.exit(
-            "\n  Gemini TTS is not configured.\n"
-            "  Set GEMINI_API_KEY, then try again.\n"
-        )
-
-    genai = _require("google.genai", "google-genai")
-    types = _require("google.genai.types", "google-genai")
-
-    client = genai.Client(api_key=GEMINI_API_KEY)
-    last_exc = None
-    for attempt in range(GEMINI_TTS_MAX_RETRIES + 1):
-        try:
-            response = client.models.generate_content(
-                model=GEMINI_TTS_MODEL,
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    response_modalities=["AUDIO"],
-                    speech_config=types.SpeechConfig(
-                        voice_config=types.VoiceConfig(
-                            prebuilt_voice_config=types.PrebuiltVoiceConfig(
-                                voice_name=GEMINI_TTS_VOICE,
-                            )
-                        )
-                    )
-                ),
-            )
-            break
-        except Exception as exc:
-            last_exc = exc
-            is_rate_limited = "429" in str(exc) or "quota" in str(exc).lower()
-            if not is_rate_limited or attempt >= GEMINI_TTS_MAX_RETRIES:
-                raise
-
-            print(
-                f"      Gemini quota/rate limit hit; waiting "
-                f"{GEMINI_TTS_RETRY_DELAY_SECONDS}s before retry "
-                f"{attempt + 1}/{GEMINI_TTS_MAX_RETRIES}..."
-            )
-            time.sleep(GEMINI_TTS_RETRY_DELAY_SECONDS)
-    else:
-        raise last_exc
-
-    try:
-        data = response.candidates[0].content.parts[0].inline_data.data
-    except Exception as exc:
-        raise RuntimeError(f"Gemini TTS returned no audio: {response}") from exc
-
-    write_wave_file(output_path, data)
+    """Use the current Gemini Interactions TTS schema and validate WAV output."""
+    from gemini_speech import synthesize
+    audio = synthesize(prompt, GEMINI_REEL_PROMPT_PREFIX, GEMINI_API_KEY,
+                       voice=GEMINI_TTS_VOICE, model=GEMINI_TTS_MODEL,
+                       retries=GEMINI_TTS_MAX_RETRIES,
+                       retry_delay=GEMINI_TTS_RETRY_DELAY_SECONDS)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_bytes(audio)
     return output_path
 
 
 def build_gemini_sequence_prompt(word_pairs: list) -> str:
-    """Build one prompt that asks Gemini to read all vocabulary pairs in order."""
-    lines = []
-    for i, row in enumerate(word_pairs, start=1):
-        arabic, english = row[0], row[1]
-        pronunciation = row[2] if len(row) > 2 and row[2] else ""
-        if pronunciation:
-            lines.append(f"{i}. {english} - {arabic} ({pronunciation}) - {arabic} ({pronunciation})")
-        else:
-            lines.append(f"{i}. {english} - {arabic} - {arabic}")
-    return GEMINI_REEL_PROMPT_PREFIX + "\n".join(lines)
+    """Verbatim bilingual transcript; style/pronunciation instructions are separate."""
+    return "\n".join(f"{row[1]}. {row[0]}. {row[0]}." for row in word_pairs)
 
 
 def synthesize_gemini_sequence(word_pairs: list, output_path: Path) -> Path:
@@ -944,8 +925,19 @@ def run_reel(arabic_words_reel: bool, youtube=None) -> Path:
     sheet_csv_url = ARABIC_SHEET_CSV_URL if arabic_words_reel else SHEET_CSV_URL
     state_file = ARABIC_STATE_FILE if arabic_words_reel else ENGLISH_STATE_FILE
     next_idx = None
+    trial_active = os.getenv("TRIAL_ACTIVE", "false").lower() == "true"
+    trial_direction = "arabic" if arabic_words_reel else "english"
+    trial_date = datetime.date.fromisoformat(os.environ["TRIAL_DATE"]) if trial_active else None
+    trial_ledger = Path("experiments/two-a-day-2026-11-27/uploads.json")
 
-    if sheet_csv_url:
+    if trial_active:
+        from trial_control import batch_for_day
+        selected = batch_for_day(trial_direction, trial_date,
+                                 trial_ledger if UPLOAD_TO_YOUTUBE else None)
+        word_pairs = selected if arabic_words_reel else [(r[0], r[1]) for r in selected]
+        level = "تعبيرات يومية"
+        print("  Source: reviewed fixed trial queue; source Sheet indices preserved")
+    elif sheet_csv_url:
         print("  Source: Google Sheet")
         all_pairs = fetch_sheet_words(sheet_csv_url)
         word_pairs, level, next_idx = load_next_batch(
@@ -973,6 +965,14 @@ def run_reel(arabic_words_reel: bool, youtube=None) -> Path:
         yt_title, yt_desc, yt_tags = build_arabic_words_metadata(word_pairs)
     else:
         yt_title, yt_desc, yt_tags = build_metadata(word_pairs)
+    if trial_active:
+        if arabic_words_reel:
+            yt_title = "7 useful Egyptian Arabic phrases 🇪🇬 #Shorts"
+            yt_desc = yt_desc.replace("words", "phrases")
+            yt_desc += "\nSpoken forms shown use a male speaker/addressee where gender applies. Romanization is approximate.\n"
+        else:
+            yt_title = "5 تعبيرات إنجليزي مفيدة للمحادثة 💬 #Shorts"
+            yt_desc = yt_desc.replace("5 كلمات", "5 تعبيرات").replace("5 new English words", "5 useful English expressions")
     print()
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -1011,7 +1011,10 @@ def run_reel(arabic_words_reel: bool, youtube=None) -> Path:
         print("Step 4/4 — Uploading to YouTube")
         youtube = youtube or authenticate_youtube()
         url = upload_to_youtube(video_path, youtube, yt_title, yt_desc, yt_tags)
-        if next_idx is not None:
+        if trial_active:
+            from trial_control import record_upload
+            record_upload(trial_direction, trial_date, url, trial_ledger)
+        elif next_idx is not None:
             save_next_index(state_file, next_idx)
         print(f"\n  Done! Your Short is at:\n  {url}")
         print(f"  (Privacy: '{PRIVACY_STATUS}')\n")

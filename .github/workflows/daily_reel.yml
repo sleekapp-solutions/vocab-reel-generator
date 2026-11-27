@@ -16,8 +16,30 @@ on:
 permissions:
   contents: write      # needed to commit state files back to the repo
 
+concurrency:
+  group: vocab-channel-uploads
+  cancel-in-progress: false
+
 jobs:
+  trial-gate:
+    runs-on: ubuntu-latest
+    outputs:
+      run: ${{ steps.gate.outputs.run }}
+      trial: ${{ steps.gate.outputs.trial }}
+      trial_date: ${{ steps.gate.outputs.trial_date }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: gate
+        env:
+          EVENT_SCHEDULE: ${{ github.event.schedule }}
+          MANUAL_UPLOAD: ${{ inputs.upload_to_youtube }}
+        run: python3 trial_control.py --direction english
   generate-and-upload:
+    needs: trial-gate
+    if: needs.trial-gate.outputs.run == 'true'
+    env:
+      TRIAL_ACTIVE: ${{ needs.trial-gate.outputs.trial }}
+      TRIAL_DATE: ${{ needs.trial-gate.outputs.trial_date }}
     runs-on: ubuntu-latest
 
     steps:
@@ -79,7 +101,7 @@ jobs:
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add state_english.json
+          git add state_english.json experiments/two-a-day-2026-11-27/uploads.json
           git diff --staged --quiet || git commit -m "chore: advance word index [skip ci]"
           git push
 

@@ -1,0 +1,13 @@
+# Merge this table into ~/.codex/config.toml or a trusted project's .codex/config.toml.
+# These paths match this installation; change command when moving the package.
+[mcp_servers.youtube_channel]
+command = "/Users/mina/Desktop/VocabReelGenerator/youtube-mcp/.venv/bin/youtube-channel-mcp"
+startup_timeout_sec = 20
+tool_timeout_sec = 180
+
+[mcp_servers.youtube_channel.env]
+YOUTUBE_MCP_ENABLE_WRITES = "0"
+# Optional absolute paths (no credentials belong in this file):
+# YOUTUBE_MCP_TOKEN = "/absolute/path/read-token.json"
+# YOUTUBE_MCP_LANGUAGE_MAP = "/absolute/path/languages.json"
+# YOUTUBE_MCP_WRITE_TOKEN = "/absolute/path/write-token.json"

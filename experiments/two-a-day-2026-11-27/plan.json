@@ -1,0 +1,32 @@
+{
+  "experiment_id": "two-a-day-2026-11-27",
+  "status": "awaiting_ci_dry_run",
+  "channel_id": "UCOHA4IwyDCxfE9-FOcW2yrA",
+  "timezone": "America/Los_Angeles",
+  "start_date": "2026-11-27",
+  "end_date": "2026-12-10",
+  "revert_date": "2026-12-11",
+  "total_daily_uploads": 2,
+  "span_days": 14,
+  "direction_mix": {
+    "english": 1,
+    "arabic": 1
+  },
+  "baseline_publication_start": "2026-11-13",
+  "baseline_publication_end": "2026-11-26",
+  "maturity_window": "First seven complete Pacific calendar days AFTER publication day (days 1-7); not exact 168-hour measurement.",
+  "report_not_before": "2026-12-20T10:00:00-08:00",
+  "freshness_rule": "No modulo wrap during trial; require enough reviewed distinct unused pairs. Current modulo indices alone cannot establish never-used history.",
+  "spanish": "deferred",
+  "activated": false,
+  "reversion": "From 2026-12-11 Pacific: restore two English slots; Arabic job skips until a new decision.",
+  "scheduled_times_utc": {
+    "english": "09:17",
+    "arabic": "13:23"
+  },
+  "scheduled_times_pst": {
+    "english": "01:17",
+    "arabic": "05:23"
+  },
+  "fresh_source": "Project-owned additive trial CSV files; source Sheets/state preserved"
+}

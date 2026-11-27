@@ -1,0 +1,21 @@
+{
+  "video_inventory_count": 469,
+  "inventory_truncated": false,
+  "method": "Normalize case, diacritics, punctuation; reject English OR Arabic matches in existing directional sheet and parsed description bullets across all accessible inventory. Does not prove absence in untranscribed video audio, deleted videos, or missing descriptions.",
+  "directions": {
+    "english": {
+      "existing_source_rows": 821,
+      "selected_new_rows": 70,
+      "batch_size": 5,
+      "days_covered": 14,
+      "matching_existing_source_or_parsed_history": 0
+    },
+    "arabic": {
+      "existing_source_rows": 300,
+      "selected_new_rows": 98,
+      "batch_size": 7,
+      "days_covered": 14,
+      "matching_existing_source_or_parsed_history": 0
+    }
+  }
+}

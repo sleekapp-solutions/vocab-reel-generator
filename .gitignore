@@ -13,3 +13,15 @@ token.json
 # Generated media
 outputs/*
 !outputs/.gitkeep
+
+# Standalone YouTube MCP local artifacts
+*.egg-info/
+.pytest_cache/
+youtube-mcp/.venv/
+read-token.json
+write-token.json
+
+# Private local analytics snapshots (never deploy channel analytics)
+experiments/*/baseline.json
+experiments/*/inventory.json
+experiments/*/report*.json

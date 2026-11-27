@@ -266,3 +266,17 @@ WORD_PAIRS
     └─→ YouTube API (upload_to_youtube)
             OAuth2 login → resumable upload → YouTube Short URL
 ```
+# Direct YouTube channel assistant
+
+An independent, read-only-by-default MCP server is available in
+[youtube-mcp](youtube-mcp/README.md) for conversational channel analytics,
+Shorts comparisons, retention and comments, with optional separately authorized
+scheduling. See its guide for the one-time Google consent and Codex registration.
+It preserves the generator's upload flow and token.
+
+
+## Bounded two-direction posting trial
+
+The [November 27–December 10 experiment](experiments/two-a-day-2026-11-27/README.md)
+uses one English-learning and one Egyptian Arabic Short per day, fresh additive
+queues, a date gate with automatic end behavior, and equal-maturity reporting.
