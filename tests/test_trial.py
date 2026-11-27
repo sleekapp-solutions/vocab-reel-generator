@@ -22,7 +22,7 @@ def test_inactive_plan_cannot_start_posting_mix(monkeypatch):
     plan = trial.load_plan()
     monkeypatch.setattr(trial, 'load_plan', lambda: {**plan, 'activated': False})
     assert not trial.schedule_decision('arabic', '23 13 * * *', date(2026,11,27))['run']
-    assert trial.schedule_decision('english', '38 17 * * *', date(2026,11,27))['run']
+    assert not trial.schedule_decision('english', '17 9 * * *', date(2026,11,27))['run']
 
 
 def test_exactly_two_daily_slots_for_all_fourteen_days():
@@ -35,15 +35,83 @@ def test_exactly_two_daily_slots_for_all_fourteen_days():
 
 
 @pytest.mark.parametrize('day',[date(2026,11,26),date(2026,12,11),date(2027,1,1)])
-def test_automatic_reversion_keeps_two_english_and_pauses_arabic(day):
+def test_permanent_mix_has_no_expiry_or_extra_english_slot(day):
     assert trial.schedule_decision('english','17 9 * * *',day)['run']
-    assert trial.schedule_decision('english','38 17 * * *',day)['run']
-    assert not trial.schedule_decision('arabic','23 13 * * *',day)['run']
+    assert not trial.schedule_decision('english','38 17 * * *',day)['run']
+    assert trial.schedule_decision('arabic','23 13 * * *',day)['run']
+    assert trial.schedule_decision('arabic','23 13 * * *',day)['trial'] is False
 
 
 def test_no_manual_uploads_during_trial():
     assert not trial.schedule_decision('english','',date(2026,11,27),True,True)['run']
     assert trial.schedule_decision('english','',date(2026,11,27),True,False)['run']
+
+
+def test_manual_uploads_also_cannot_add_extra_posts_after_window():
+    assert not trial.schedule_decision('arabic','',date(2026,12,11),True,True)['run']
+    assert trial.schedule_decision('arabic','',date(2026,12,11),True,False)['run']
+
+
+def test_actual_workflow_crons_total_two_after_boundary():
+    import re
+    workflows=Path(__file__).parents[1]/'.github/workflows'
+    for day in [date(2026,11,27),date(2026,12,10),date(2026,12,11),date(2027,6,1)]:
+        allowed=[]
+        for direction,filename in [('english','daily_reel.yml'),('arabic','arabic_reel.yml')]:
+            crons=re.findall(r'cron: "([^"]+)"',(workflows/filename).read_text())
+            assert len(crons)==1
+            allowed.extend((direction,cron) for cron in crons if trial.schedule_decision(direction,cron,day)['run'])
+        assert len(allowed)==2
+
+
+@pytest.mark.parametrize('direction,size,total,start,expected',[('english',5,821,83,88),('arabic',7,300,226,233),('english',5,821,819,3),('arabic',7,300,297,4)])
+def test_original_sheet_progression_and_modulo_wrap(tmp_path,direction,size,total,start,expected):
+    import generate_reel as gen
+    state=tmp_path/f'state_{direction}.json'
+    state.write_text(json.dumps({'next_index':start}))
+    rows=[(f'ar{i}',f'en{i}','level',f'pron{i}') for i in range(total)]
+    batch,level,next_index=gen.load_next_batch(rows,size,direction=='arabic',state)
+    assert [row[0] for row in batch]==[f'ar{(start+i)%total}' for i in range(size)]
+    assert next_index==expected
+    assert json.loads(state.read_text())['next_index']==start
+    gen.save_next_index(state,next_index)
+    assert json.loads(state.read_text())['next_index']==expected
+
+
+@pytest.mark.parametrize('arabic,start,expected',[(False,83,88),(True,226,233)])
+@pytest.mark.parametrize('upload_success',[True,False])
+def test_post_window_upload_advances_only_its_original_state_and_keeps_duplicate_guard(tmp_path,monkeypatch,arabic,start,expected,upload_success):
+    import generate_reel as gen
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv('TRIAL_ACTIVE','false')
+    monkeypatch.setenv('DAILY_SLOT_MANAGED','true')
+    monkeypatch.setenv('DAILY_SLOT_DATE','2026-12-11')
+    direction='arabic' if arabic else 'english'
+    state=tmp_path/f'state_{direction}.json';state.write_text(json.dumps({'next_index':start}))
+    other=tmp_path/f'state_{"english" if arabic else "arabic"}.json';other.write_text('{"next_index":42}')
+    ledger=tmp_path/'experiments/two-a-day-2026-11-27/uploads.json';ledger.parent.mkdir(parents=True);ledger.write_text('{}')
+    monkeypatch.setattr(gen,'UPLOAD_TO_YOUTUBE',True)
+    monkeypatch.setattr(gen,'PREVIEW_ONLY',False)
+    monkeypatch.setattr(gen,'OUTPUT_DIR',tmp_path/'outputs')
+    monkeypatch.setattr(gen,'fetch_sheet_words',lambda url:[(f'ar{i}',f'en{i}','level',f'pron{i}') for i in range(300 if arabic else 821)])
+    for name in ['create_image','create_arabic_words_image','create_english_vocab_audio','create_arabic_vocab_audio','create_video']:
+        monkeypatch.setattr(gen,name,lambda *args:args[-1])
+    monkeypatch.setattr(gen,'check_ffmpeg',lambda:None)
+    def upload(*args):
+        if not upload_success:raise RuntimeError('simulated upload failure')
+        return 'https://www.youtube.com/shorts/abcdefghijk'
+    uploader=MagicMock(side_effect=upload);monkeypatch.setattr(gen,'upload_to_youtube',uploader)
+    if upload_success:
+        gen.run_reel(arabic,youtube=object())
+        assert json.loads(state.read_text())['next_index']==expected
+        assert json.loads(ledger.read_text())[f'2026-12-11:{direction}']['source']=='sheet'
+        with pytest.raises(ValueError,match='duplicate'):gen.run_reel(arabic,youtube=object())
+    else:
+        with pytest.raises(RuntimeError):gen.run_reel(arabic,youtube=object())
+        assert json.loads(state.read_text())['next_index']==start
+        assert json.loads(ledger.read_text())=={}
+    assert json.loads(other.read_text())['next_index']==42
+    assert uploader.call_count==1
 
 
 @pytest.mark.parametrize('direction,size',[('english',5),('arabic',7)])

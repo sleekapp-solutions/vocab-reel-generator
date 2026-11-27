@@ -5,7 +5,6 @@
   "timezone": "America/Los_Angeles",
   "start_date": "2026-11-27",
   "end_date": "2026-12-10",
-  "revert_date": "2026-12-11",
   "total_daily_uploads": 2,
   "span_days": 14,
   "direction_mix": {
@@ -19,7 +18,6 @@
   "freshness_rule": "No modulo wrap during trial; require enough reviewed distinct unused pairs. Current modulo indices alone cannot establish never-used history.",
   "spanish": "deferred",
   "activated": true,
-  "reversion": "From 2026-12-11 Pacific: restore two English slots; Arabic job skips until a new decision.",
   "scheduled_times_utc": {
     "english": "09:17",
     "arabic": "13:23"
@@ -30,5 +28,14 @@
   },
   "fresh_source": "Project-owned additive trial CSV files; source Sheets/state preserved",
   "validation_run": "https://github.com/sleekapp-solutions/vocab-reel-generator/actions/runs/45954832460",
-  "validation": "Both full MP4 generation paths succeeded with uploads disabled and unchanged word/ledger state."
+  "validation": "Both full MP4 generation paths succeeded with uploads disabled and unchanged word/ledger state.",
+  "posting_policy": "permanent_one_per_direction",
+  "measurement_only_end_date": "2026-12-10",
+  "source_after_window": "From 2026-12-11 Pacific both original Sheets resume at preserved indices; existing modulo cycling remains enabled.",
+  "original_source_resume_indices": {
+    "english": 83,
+    "arabic": 226
+  },
+  "original_source_resume_date": "2026-12-11",
+  "automatic_monitoring": false
 }

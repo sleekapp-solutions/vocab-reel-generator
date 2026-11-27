@@ -929,6 +929,11 @@ def run_reel(arabic_words_reel: bool, youtube=None) -> Path:
     trial_direction = "arabic" if arabic_words_reel else "english"
     trial_date = datetime.date.fromisoformat(os.environ["TRIAL_DATE"]) if trial_active else None
     trial_ledger = Path("experiments/two-a-day-2026-11-27/uploads.json")
+    managed_slot = os.getenv("DAILY_SLOT_MANAGED", "false").lower() == "true"
+    slot_date = datetime.date.fromisoformat(os.environ["DAILY_SLOT_DATE"]) if managed_slot else trial_date
+    if UPLOAD_TO_YOUTUBE and (managed_slot or trial_active):
+        from trial_control import assert_slot_available
+        assert_slot_available(trial_direction, slot_date, trial_ledger)
 
     if trial_active:
         from trial_control import batch_for_day
@@ -1011,10 +1016,11 @@ def run_reel(arabic_words_reel: bool, youtube=None) -> Path:
         print("Step 4/4 — Uploading to YouTube")
         youtube = youtube or authenticate_youtube()
         url = upload_to_youtube(video_path, youtube, yt_title, yt_desc, yt_tags)
-        if trial_active:
+        if managed_slot or trial_active:
             from trial_control import record_upload
-            record_upload(trial_direction, trial_date, url, trial_ledger)
-        elif next_idx is not None:
+            record_upload(trial_direction, slot_date, url, trial_ledger,
+                          source="trial" if trial_active else "sheet")
+        if next_idx is not None:
             save_next_index(state_file, next_idx)
         print(f"\n  Done! Your Short is at:\n  {url}")
         print(f"  (Privacy: '{PRIVACY_STATUS}')\n")

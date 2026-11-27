@@ -39,6 +39,8 @@ jobs:
     env:
       TRIAL_ACTIVE: ${{ needs.trial-gate.outputs.trial }}
       TRIAL_DATE: ${{ needs.trial-gate.outputs.trial_date }}
+      DAILY_SLOT_MANAGED: ${{ github.event_name == 'schedule' }}
+      DAILY_SLOT_DATE: ${{ needs.trial-gate.outputs.trial_date }}
     runs-on: ubuntu-latest
 
     steps:

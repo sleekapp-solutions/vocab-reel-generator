@@ -275,8 +275,10 @@ scheduling. See its guide for the one-time Google consent and Codex registration
 It preserves the generator's upload flow and token.
 
 
-## Bounded two-direction posting trial
+## Permanent one-per-direction daily posting
 
 The [November 27–December 10 experiment](experiments/two-a-day-2026-11-27/README.md)
-uses one English-learning and one Egyptian Arabic Short per day, fresh additive
-queues, a date gate with automatic end behavior, and equal-maturity reporting.
+keeps one English-learning and one Egyptian Arabic Short daily permanently.
+Fresh additive queues cover November 27–December 10; both original Sheets
+resume at their preserved positions afterward, with modulo cycling and daily
+duplicate protection. The initial window still uses equal-maturity reporting.

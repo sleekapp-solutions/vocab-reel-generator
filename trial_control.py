@@ -1,4 +1,4 @@
-"""Bounded experiment selection and scheduler gate. No network or generation imports."""
+"""Permanent daily posting gate and bounded fresh-content window."""
 import argparse
 import csv
 from datetime import date, datetime
@@ -24,11 +24,16 @@ def schedule_decision(direction, cron, today, manual=False, upload=False):
     plan = load_plan()
     day = trial_day(plan, today) if plan.get("activated") else None
     if manual:
-        # Explicit manual uploads during the trial could exceed two per day.
-        return {"run": not upload or day is None, "trial": day is not None, "day": day, "reason": "Manual upload disabled during trial; scheduled jobs own the two daily slots."}
-    if direction == "arabic":
-        return {"run": day is not None, "trial": day is not None, "day": day, "reason": "Arabic runs once/day only inside trial; paused outside trial."}
-    return {"run": day is None or cron == "17 9 * * *", "trial": day is not None, "day": day, "reason": "Keep morning English slot during trial; restore both English slots after trial."}
+        return {"run": not upload, "trial": day is not None, "day": day, "reason": "Manual previews are allowed; scheduled jobs own the two permanent daily upload slots."}
+    expected = {"english": "17 9 * * *", "arabic": "23 13 * * *"}[direction]
+    return {"run": bool(plan.get("activated")) and cron == expected, "trial": day is not None, "day": day, "reason": "One slot per direction permanently; only the fresh-content measurement window expires."}
+
+
+def assert_slot_available(direction, today, ledger_path):
+    path = Path(ledger_path)
+    ledger = json.loads(path.read_text()) if path.exists() else {}
+    if f"{today}:{direction}" in ledger:
+        raise ValueError("This daily slot was already uploaded; refusing a duplicate.")
 
 
 def batch_for_day(direction, today, ledger_path=None):
@@ -43,22 +48,20 @@ def batch_for_day(direction, today, ledger_path=None):
     if len(rows) != 14 * size:
         raise ValueError("Trial content is incomplete; refusing to wrap or publish partial content.")
     selected = rows[day * size:(day + 1) * size]
-    if ledger_path and Path(ledger_path).exists():
-        ledger = json.loads(Path(ledger_path).read_text())
-        if f"{today}:{direction}" in ledger:
-            raise ValueError("This daily trial slot was already uploaded; refusing a duplicate.")
+    if ledger_path:
+        assert_slot_available(direction, today, ledger_path)
     if any(not r.get("arabic") or not r.get("english") or (direction == "arabic" and not r.get("pronunciation")) for r in selected):
         raise ValueError("Incomplete trial vocabulary; refusing upload.")
     return [(r["arabic"], r["english"], r.get("pronunciation", "")) for r in selected]
 
 
-def record_upload(direction, today, url, path):
+def record_upload(direction, today, url, path, source="trial"):
     path = Path(path)
     ledger = json.loads(path.read_text()) if path.exists() else {}
     key = f"{today}:{direction}"
     if key in ledger:
-        raise ValueError("Daily trial slot already recorded.")
-    ledger[key] = {"url": url, "published_at": datetime.now(ZoneInfo("UTC")).isoformat(), "direction": direction}
+        raise ValueError("Daily slot already recorded.")
+    ledger[key] = {"url": url, "published_at": datetime.now(ZoneInfo("UTC")).isoformat(), "direction": direction, "source": source}
     path.write_text(json.dumps(ledger, indent=2) + "\n")
 
 
@@ -71,7 +74,7 @@ def main():
     decision = schedule_decision(args.direction, os.environ.get("EVENT_SCHEDULE", ""), today, manual, os.environ.get("MANUAL_UPLOAD") == "true")
     # Manual dry runs select today's trial queue but never consume it.
     ledger = PLAN.parent / "uploads.json"
-    if decision["trial"] and decision["run"] and f"{today}:{args.direction}" in json.loads(ledger.read_text() if ledger.exists() else "{}"):
+    if not manual and decision["run"] and f"{today}:{args.direction}" in json.loads(ledger.read_text() if ledger.exists() else "{}"):
         decision.update(run=False, reason="Daily slot already recorded; no duplicate upload.")
     output = {"run": str(decision["run"]).lower(), "trial": str(decision["trial"]).lower(), "trial_date": str(today)}
     if os.environ.get("GITHUB_OUTPUT"):

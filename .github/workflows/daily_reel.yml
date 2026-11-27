@@ -2,9 +2,8 @@ name: Daily English Vocab Reel
 
 on:
   schedule:
-    # Twice daily, offset from the top of the hour to reduce GitHub scheduler delays.
+    # Permanently one English-learning Short daily, alongside one Arabic Short.
     - cron: "17 9 * * *"
-    - cron: "38 17 * * *"
   workflow_dispatch:
     inputs:
       upload_to_youtube:
@@ -40,6 +39,8 @@ jobs:
     env:
       TRIAL_ACTIVE: ${{ needs.trial-gate.outputs.trial }}
       TRIAL_DATE: ${{ needs.trial-gate.outputs.trial_date }}
+      DAILY_SLOT_MANAGED: ${{ github.event_name == 'schedule' }}
+      DAILY_SLOT_DATE: ${{ needs.trial-gate.outputs.trial_date }}
     runs-on: ubuntu-latest
 
     steps:
