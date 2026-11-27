@@ -1,6 +1,6 @@
 {
   "experiment_id": "two-a-day-2026-11-27",
-  "status": "awaiting_ci_dry_run",
+  "status": "active",
   "channel_id": "UCOHA4IwyDCxfE9-FOcW2yrA",
   "timezone": "America/Los_Angeles",
   "start_date": "2026-11-27",
@@ -18,7 +18,7 @@
   "report_not_before": "2026-12-20T10:00:00-08:00",
   "freshness_rule": "No modulo wrap during trial; require enough reviewed distinct unused pairs. Current modulo indices alone cannot establish never-used history.",
   "spanish": "deferred",
-  "activated": false,
+  "activated": true,
   "reversion": "From 2026-12-11 Pacific: restore two English slots; Arabic job skips until a new decision.",
   "scheduled_times_utc": {
     "english": "09:17",
@@ -28,5 +28,7 @@
     "english": "01:17",
     "arabic": "05:23"
   },
-  "fresh_source": "Project-owned additive trial CSV files; source Sheets/state preserved"
+  "fresh_source": "Project-owned additive trial CSV files; source Sheets/state preserved",
+  "validation_run": "https://github.com/sleekapp-solutions/vocab-reel-generator/actions/runs/45954832460",
+  "validation": "Both full MP4 generation paths succeeded with uploads disabled and unchanged word/ledger state."
 }

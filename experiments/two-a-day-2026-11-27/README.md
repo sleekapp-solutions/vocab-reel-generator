@@ -12,7 +12,7 @@ From December 11 PST, the gate automatically restores both English slots and pau
 
 ## Fresh material and preserved source
 
-The trial uses two additive, project-owned UTF-8 CSV files: 70 English expressions (5 × 14) and 98 Egyptian Arabic expressions (7 × 14). Both were checked against the full existing directional published sheets (821 English rows / 300 Arabic rows) and parsed vocabulary bullets from 469 accessible channel videos. The audit normalizes case, punctuation and diacritics and rejects a matching English OR Arabic form. No selected form matched those checked sources. It cannot establish absence in deleted videos, untranscribed speech or omitted descriptions. See `freshness-audit.json` for the exact coverage.
+The trial uses two additive, project-owned UTF-8 CSV files: 70 English expressions (5 × 14) and 98 Egyptian Arabic expressions (7 × 14). Both were checked against the both full existing published sheets (821 English rows / 300 Arabic rows) and parsed vocabulary bullets from 469 accessible channel videos. The audit normalizes case, punctuation and diacritics and rejects a matching English OR Arabic form. No selected form matched those checked sources. It cannot establish absence in deleted videos, untranscribed speech or omitted descriptions. See `freshness-audit.json` for the exact coverage.
 
 These are useful short phrases, not claimed to be newly discovered words. The translations are sense-specific; masculine speaker/addressee forms are used where relevant and disclosed in descriptions. Romanization is a learner aid, not a phonetic guarantee. The source sheets have not been edited: the connected Drive account did not expose them. Their original rows, URLs and state indices remain intact. A source-sheet bug can therefore be fixed separately rather than silently overwritten. For example, the next legacy English batch pairs “Reconcile” (verb) with “تسوية” (noun); a future sheet review should resolve part-of-speech and context mismatches before resuming that material.
 
@@ -36,6 +36,8 @@ Run a read-only comparison locally with the installed dedicated OAuth/MCP packag
 youtube-mcp/.venv/bin/python scripts/trial_report.py
 ```
 
+If this checkout is stale, first fetch the deployed `experiments/two-a-day-2026-11-27/uploads.json` from the repository and pass its path with `--ledger`; trial directions are grounded in the internal upload ledger, never implementation IDs in public descriptions.
+
 The report compares baseline publication dates November 13–26 with trial publication dates November 27–December 10. Each video is measured over the **first seven complete Pacific calendar days after its publication day** (days 1–7). Daily Analytics cannot provide exact rolling 168-hour windows. Immature videos stay pending; missing report rows stay unavailable, not zero. A full final review is planned no earlier than December 20 at 10:00 PST, allowing the final December 10 cohort seven complete days plus reporting lag. Availability is checked at report time rather than assumed.
 
 Compare:
@@ -56,3 +58,11 @@ Local checks:
 ```sh
 youtube-mcp/.venv/bin/python -m pytest -q tests youtube-mcp/tests
 ```
+
+## Original Arabic failure evidence
+
+The last successful Arabic run on November 5 uploaded rows 220–226 of 300 and advanced the index to 226. The November 6 run selected valid rows 227–233 and failed during Gemini speech generation with `400 INVALID_ARGUMENT`, rejecting `speechConfig` under `generation_config`; the November 26 failure is identical. The sheet was not exhausted and modulo cycling did not cause the speech request failure. English uploads continued. Both workflow records remained active; upload was disabled only for the explicit dry-run validation.
+
+- Last success: https://github.com/sleekapp-solutions/vocab-reel-generator/actions/runs/42106006612
+- First sustained failure: https://github.com/sleekapp-solutions/vocab-reel-generator/actions/runs/42284382962
+- Recent same failure: https://github.com/sleekapp-solutions/vocab-reel-generator/actions/runs/45904886745

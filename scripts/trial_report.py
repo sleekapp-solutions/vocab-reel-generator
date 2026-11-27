@@ -94,6 +94,7 @@ def build_report(api, videos, plan, latest, ledger=None):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", default=str(PLAN.parent / "report.json"))
+    parser.add_argument("--ledger", default=str(PLAN.parent / "uploads.json"), help="Use a freshly fetched deployed upload ledger when the local checkout is stale.")
     args = parser.parse_args()
     from youtube_channel_mcp.server import client
     api = client()
@@ -110,7 +111,7 @@ def main():
         token = page["next_page_token"]
         if not token:
             break
-    ledger_path = PLAN.parent / "uploads.json"
+    ledger_path = Path(args.ledger)
     ledger = json.loads(ledger_path.read_text()) if ledger_path.exists() else {}
     result = build_report(api, videos, plan, latest, ledger)
     result.update(channel_id=plan["channel_id"], generated_at=datetime.now(TZ).isoformat(), inventory_count=len(videos), inventory_truncated=bool(token))
