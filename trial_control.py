@@ -55,13 +55,15 @@ def batch_for_day(direction, today, ledger_path=None):
     return [(r["arabic"], r["english"], r.get("pronunciation", "")) for r in selected]
 
 
-def record_upload(direction, today, url, path, source="trial"):
+def record_upload(direction, today, url, path, source="trial", presentation=None):
     path = Path(path)
     ledger = json.loads(path.read_text()) if path.exists() else {}
     key = f"{today}:{direction}"
     if key in ledger:
         raise ValueError("Daily slot already recorded.")
     ledger[key] = {"url": url, "published_at": datetime.now(ZoneInfo("UTC")).isoformat(), "direction": direction, "source": source}
+    if presentation:
+        ledger[key]["presentation"] = presentation
     path.write_text(json.dumps(ledger, indent=2) + "\n")
 
 

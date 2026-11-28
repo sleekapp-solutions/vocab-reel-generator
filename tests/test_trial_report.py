@@ -31,3 +31,10 @@ def test_maturity_excludes_unready_video_and_marks_missing_rows():
     assert len(result['cohorts']['baseline']['unavailable'])==1
     assert result['cohorts']['baseline']['all_directions']['mature_video_count']==0
     assert api.report.call_count==1
+
+
+def test_presentation_comes_from_internal_ledger_not_public_title():
+    video={'id':'abcdefghijk','snippet':{'title':'Everyday Egyptian Arabic'}}
+    ledger={'2026-11-28:arabic':{'url':'https://www.youtube.com/shorts/abcdefghijk','direction':'arabic','presentation':'daily-series-v1'}}
+    assert report.presentation(video,ledger)=='daily-series-v1'
+    assert report.presentation(video,{})=='unrecorded'

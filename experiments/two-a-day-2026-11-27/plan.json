@@ -37,5 +37,11 @@
     "arabic": 226
   },
   "original_source_resume_date": "2026-12-11",
-  "automatic_monitoring": false
+  "automatic_monitoring": false,
+  "subscriber_growth_experiment": {
+    "presentation": "daily-series-v1",
+    "applies_to": "Future scheduled uploads after deployment; existing public videos unchanged.",
+    "evaluation": "Direction-matched days-1-7 video-attributed gained subscribers per 1000 engaged views; channel-wide net subscribers separately.",
+    "monitoring_enabled": false
+  }
 }

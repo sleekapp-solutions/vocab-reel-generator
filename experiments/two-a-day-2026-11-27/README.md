@@ -72,3 +72,13 @@ The last successful Arabic run on November 5 uploaded rows 220–226 of 300 and 
 ## Permanent-schedule verification
 
 Boundary tests cover November 27, December 10, December 11 and later dates; actual workflow cron counts; resumed Sheet selection; normal index advancement; modulo wrap for both list sizes; duplicate rejection; and failed uploads preserving state. The original two-week comparison and December 20 maturation guidance remain unchanged. No automatic monitoring has been enabled.
+
+## Future-video subscriber-growth experiment
+
+Future scheduled videos use stable series identities: “إنجليزي عملي كل يوم” for Arabic-speaking English learners and “Everyday Egyptian Arabic” for English-speaking Egyptian-Arabic learners. A small matching footer below the vocabulary invites viewers to subscribe and return tomorrow. Tests verify that it changes no pixels outside its footer box and does not replace lesson rows, words, source dates, backgrounds or coordinates.
+
+English-learning audio retains every Arabic→English item and adds “اشترك وارجع بكرة.” after the lesson. This optional closing clip is capped at 4.5 seconds; if unavailable or longer, the complete lesson remains. The Egyptian-Arabic transcript retains every English/Arabic/Arabic item and closes once with “Subscribe for tomorrow’s lesson.” Metadata names the daily series, preserves the vocabulary list, uses “phrases” for the fresh expression queue, and invites another lesson without claiming recycled vocabulary is new. No existing public video is edited.
+
+This is a subscriber-conversion experiment, not guaranteed growth or proof from one successful Short. Future scheduled ledger entries record the internal presentation label `daily-series-v1`; it never appears in public descriptions. The equal-maturity report groups by direction and recorded presentation and keeps unrecorded videos explicitly unrecorded. Compare video watch-page-attributed gained subscribers per 1,000 engaged views at the same days-1–7 age, alongside sample sizes and typical average-view percentage. Channel-wide net subscriber growth remains separate.
+
+Permanent posting times, December 11 original-Sheet resumption/modulo cycling, source indices, word queues, credentials and measurement dates remain intact. The no-upload CI validation checks both complete generation paths, 1080×1920 dimensions and first-day preview duration budgets (35 seconds English / 45 seconds Arabic). These fixture budgets do not claim all future word batches have identical lengths. Automatic monitoring remains off.

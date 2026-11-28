@@ -30,6 +30,13 @@ def direction(video, ledger=None):
     return "unknown", "no_explicit_direction_evidence"
 
 
+def presentation(video, ledger=None):
+    for slot in (ledger or {}).values():
+        if slot.get("url", "").rsplit("/", 1)[-1] == video["id"]:
+            return slot.get("presentation", "previous_recorded_format")
+    return "unrecorded"
+
+
 def summarize(rows):
     totals = {metric: sum(row.get(metric, 0) for row in rows) for metric in ("views", "engagedViews", "estimatedMinutesWatched", "subscribersGained", "subscribersLost")}
     engaged = totals["engagedViews"]
@@ -58,7 +65,7 @@ def build_report(api, videos, plan, latest, ledger=None):
         for cohort, (first, last) in intervals.items():
             if not date.fromisoformat(first) <= publication <= date.fromisoformat(last):
                 continue
-            info = {"video": video["id"], "title": video["snippet"].get("title"), "direction": label, "direction_evidence": evidence, "publication_day_pacific": str(publication), "maturity_start": str(start), "maturity_end": str(end)}
+            info = {"video": video["id"], "title": video["snippet"].get("title"), "direction": label, "direction_evidence": evidence, "presentation": presentation(video, ledger), "publication_day_pacific": str(publication), "maturity_start": str(start), "maturity_end": str(end)}
             if latest is None or end > latest:
                 cohorts[cohort]["pending"].append(info)
                 continue
@@ -75,6 +82,11 @@ def build_report(api, videos, plan, latest, ledger=None):
     for cohort, data in cohorts.items():
         data["all_directions"] = summarize(data["videos"])
         data["by_direction"] = {label: summarize([r for r in data["videos"] if r["direction"] == label]) for label in ("english", "arabic", "unknown")}
+        data["by_direction_and_presentation"] = {
+            label: {variant: summarize([r for r in data["videos"] if r["direction"] == label and r["presentation"] == variant])
+                    for variant in sorted({r["presentation"] for r in data["videos"] if r["direction"] == label})}
+            for label in ("english", "arabic", "unknown")
+        }
         first, last = intervals[cohort]
         eligible_end = min(date.fromisoformat(last), latest) if latest else None
         if eligible_end and eligible_end >= date.fromisoformat(first):

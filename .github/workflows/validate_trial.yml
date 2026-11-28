@@ -27,6 +27,19 @@ jobs:
           UPLOAD_TO_YOUTUBE: 'false'
           RUN_BOTH_REELS: 'true'
         run: python generate_reel.py
+      - name: Check subscriber-series preview dimensions and duration
+        run: |
+          python - <<'PYTHON'
+          import json, subprocess
+          for name, maximum in [("english_vocab", 35), ("arabic_words", 45)]:
+              path = "outputs/" + name + "_reel.mp4"
+              result = json.loads(subprocess.check_output(["ffprobe", "-v", "quiet", "-show_streams", "-show_format", "-of", "json", path]))
+              video = next(stream for stream in result["streams"] if stream["codec_type"] == "video")
+              duration = float(result["format"]["duration"])
+              assert (video["width"], video["height"]) == (1080, 1920)
+              assert 0 < duration <= maximum, (name, duration, maximum)
+              print(name + ": portrait 1080x1920; " + str(round(duration, 2)) + " seconds; within preview budget")
+          PYTHON
       - uses: actions/upload-artifact@v4
         if: success()
         with:

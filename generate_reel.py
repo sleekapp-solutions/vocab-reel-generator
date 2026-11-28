@@ -348,32 +348,7 @@ def save_next_index(state_file: Path, next_idx: int) -> None:
 
 
 def build_metadata(word_pairs: list) -> tuple:
-    import random
-
-    title_variations = [
-        "5 كلمات إنجليزي هتسمعهم كل يوم 🔥 #Shorts",
-        "لو عايز الإنجليزي بتاعك يتحسن.. احفظ دول 👌 #Shorts",
-        "5 كلمات إنجليزي مهمين جدًا للمحادثة 💬 #Shorts",
-        "اختبر نفسك في الإنجليزي 🧠 #Shorts",
-        "5 كلمات إنجليزي لازم تبقى عارفهم ✅ #Shorts",
-        "كلمات هتخليك تفهم الإنجليزي أسرع 🚀 #Shorts",
-        "5 كلمات هتفرق معاك في الإنجليزي 🔥 #Shorts",
-        "بتتعلم إنجليزي؟ متفوتش الكلمات دي 📌 #Shorts",
-        "كلمات إنجليزي مهمة للحياة اليومية 🗣️ #Shorts",
-        "تعلم 5 كلمات في أقل من دقيقة ⚡ #Shorts",
-        "مستواك إيه في الإنجليزي؟ جرب الكلمات دي 👀 #Shorts",
-        "5 كلمات جديدة ضيفهم لقاموسك 📚 #Shorts",
-        "خد جرعة إنجليزي سريعة 🎯 #Shorts",
-        "5 كلمات هتسمعهم في الشغل والدراسة 💼 #Shorts",
-        "لو نسيت الكلمات دي هتتوه في المحادثة 😅 #Shorts",
-        "احفظ كلمة جديدة كل يوم.. ابدأ بدول 💡 #Shorts",
-        "كلمات بسيطة بس مهمة جدًا 🔥 #Shorts",
-        "عايز تتكلم إنجليزي بطلاقة؟ ابدأ بالكلمات دي 🚀 #Shorts",
-        "خمس كلمات هيستخدمهم أي Native Speaker 🇺🇸 #Shorts",
-        "تحدي سريع: تعرف معنى الكلمات دي؟ 🤔 #Shorts",
-        "احفظهم النهارده واشكرني بعدين 😎 #Shorts",
-    ]
-    title = random.choice(title_variations)
+    title = "إنجليزي عملي كل يوم | 5 كلمات #Shorts"
 
     word_list = "\n".join(f"• {en} — {ar}" for ar, en in word_pairs)
 
@@ -381,8 +356,8 @@ def build_metadata(word_pairs: list) -> tuple:
 
 {word_list}
 
-📌 تابعنا لتتعلم 5 كلمات انجليزي جديدة كل يوم!
-Follow us for 5 new English words every day!
+إنجليزي عملي كل يوم — كلمات مفيدة للمحادثة.
+اشترك في القناة وارجع بكرة لدرس إنجليزي آخر.
 
 #كلمات_انجليزي #تعلم_الانجليزي #كلمات_انجليزية #تعلم_اللغة_الانجليزية #انجليزي_للعرب #مفردات_انجليزية #كلمة_اليوم #تعليم_الانجليزي #انجليزي_بالعربي #LearnEnglish #EnglishVocabulary #EnglishForArabics #ArabicSpeakers #DailyEnglish #LanguageLearning #Shorts #YouTubeShorts #English #Arabic #EnglishWords"""
 
@@ -422,21 +397,7 @@ Follow us for 5 new English words every day!
 
 
 def build_arabic_words_metadata(word_pairs: list) -> tuple:
-    import random
-
-    title_variations = [
-        "7 everyday Egyptian Arabic words 🇪🇬 #Shorts",
-        "Egyptian Arabic for beginners: 7 words #Shorts",
-        "Learn 7 common Egyptian Arabic words #Shorts",
-        "7 useful Egyptian Arabic words #Shorts",
-        "Egyptian Arabic for beginners 🇪🇬 #Shorts",
-        "Common Egyptian Arabic vocabulary #Shorts",
-        "7 words in Egyptian Arabic #Shorts",
-        "Simple Egyptian Arabic vocabulary #Shorts",
-        "Egyptian Arabic words with pronunciation #Shorts",
-        "Beginner Egyptian Arabic: 7 words #Shorts",
-    ]
-    title = random.choice(title_variations)
+    title = "Everyday Egyptian Arabic | 7 words #Shorts"
 
     def format_row(row):
         arabic, english = row[0], row[1]
@@ -451,7 +412,8 @@ def build_arabic_words_metadata(word_pairs: list) -> tuple:
 
 {word_list}
 
-Simple Egyptian Arabic vocabulary with pronunciation for beginners.
+Everyday Egyptian Arabic — useful vocabulary with pronunciation for beginners.
+Subscribe and come back tomorrow for another Egyptian Arabic lesson.
 
 #EgyptianArabic #LearnArabic #ArabicForBeginners #ArabicVocabulary #EgyptianDialect #SpeakArabic #ArabicLesson #LearnEgyptianArabic #Shorts #YouTubeShorts"""
 
@@ -528,6 +490,29 @@ def draw_fitted(draw, xy, text, candidates, size, width, fill, arabic=False):
             draw.text(position, line, font=font, fill=fill, anchor="mm")
 
 
+SERIES_FOOTER_BOX = (80, 1755, 1000, 1860)
+SERIES_COPY = {
+    "english": ("إنجليزي عملي كل يوم", "اشترك وارجع بكرة"),
+    "arabic": ("Everyday Egyptian Arabic", "Subscribe • Come back tomorrow"),
+}
+ENGLISH_SUBSCRIBE_CLOSE = "اشترك وارجع بكرة."
+ARABIC_SUBSCRIBE_CLOSE = "Subscribe for tomorrow's lesson."
+
+
+def draw_series_footer(draw, direction):
+    """Small two-line series footer below vocabulary; retain the original cards."""
+    title, invitation = SERIES_COPY[direction]
+    arabic = direction == "english"
+    candidates = ARABIC_FONT_CANDIDATES if arabic else BOLD_FONT_CANDIDATES
+    draw.rounded_rectangle(SERIES_FOOTER_BOX, radius=20, fill=(250, 246, 237), outline=(160, 122, 40), width=2)
+    for text, y, size, color in [(title, 1784, 30, (13, 27, 75)), (invitation, 1828, 28, (13, 27, 75))]:
+        lines, font, _ = fitted_lines(draw, text, candidates, size, 840, arabic, max_lines=1)
+        if arabic:
+            draw_arabic_text(draw, (540, y), lines[0], font, color)
+        else:
+            draw.text((540, y), lines[0], font=font, fill=color, anchor="mm")
+
+
 def create_image(word_pairs: list, level: str, output_path: Path) -> Path:
     """
     Loads the designer background, then overlays word pairs and the level pill.
@@ -571,6 +556,8 @@ def create_image(word_pairs: list, level: str, output_path: Path) -> Path:
 
         # Arabic word — centred in the right card half
         draw_fitted(draw, (_AR_CENTER_X, mid_y), ar, ARABIC_FONT_CANDIDATES, 58, 400, NAVY, True)
+
+    draw_series_footer(draw, "english")
 
     # ── Save ───────────────────────────────────────────────────────────────
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -619,6 +606,8 @@ def create_arabic_words_image(word_pairs: list, level: str, output_path: Path) -
         draw_fitted(draw, (english_x, y), en, BOLD_FONT_CANDIDATES, 30, 280, NAVY)
         draw_fitted(draw, (arabic_x, y), ar, ARABIC_FONT_CANDIDATES, 34, 300, NAVY, True)
         draw_fitted(draw, (pronunciation_x, y), pronunciation, BOLD_FONT_CANDIDATES, 30, 280, RUST)
+
+    draw_series_footer(draw, "arabic")
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     rgb = img.convert("RGB")
@@ -675,7 +664,8 @@ def synthesize_gemini_prompt(prompt: str, output_path: Path) -> Path:
 
 def build_gemini_sequence_prompt(word_pairs: list) -> str:
     """Verbatim bilingual transcript; style/pronunciation instructions are separate."""
-    return "\n".join(f"{row[1]}. {row[0]}. {row[0]}." for row in word_pairs)
+    lesson = "\n".join(f"{row[1]}. {row[0]}. {row[0]}." for row in word_pairs)
+    return lesson + "\n" + ARABIC_SUBSCRIBE_CLOSE
 
 
 def synthesize_gemini_sequence(word_pairs: list, output_path: Path) -> Path:
@@ -710,6 +700,22 @@ def create_arabic_vocab_audio(word_pairs: list, output_path: Path) -> Path:
     duration_s = len(combined) / 1000
     print(f"  Saved  → {output_path}  ({duration_s:.1f} s)")
     return output_path
+
+
+def add_english_subscribe_close(lesson, temporary_dir):
+    """Keep the existing lesson intact and add a short Arabic close if available."""
+    path = Path(temporary_dir) / "subscribe_close.mp3"
+    try:
+        gTTS(text=ENGLISH_SUBSCRIBE_CLOSE, lang="ar").save(str(path))
+        close = AudioSegment.from_mp3(path)
+    except Exception:
+        print("  Optional subscribe close unavailable; keeping complete lesson audio.")
+        return lesson
+    if len(close) > 4500:
+        print("  Optional subscribe close exceeds 4.5 seconds; keeping complete lesson audio.")
+        return lesson
+    # The existing loop ends with exactly PAUSE_AFTER_ENGLISH ms of silence.
+    return lesson[:-PAUSE_AFTER_ENGLISH] + AudioSegment.silent(duration=350) + close + AudioSegment.silent(duration=150)
 
 
 def create_english_vocab_audio(word_pairs: list, output_path: Path) -> Path:
@@ -753,6 +759,8 @@ def create_english_vocab_audio(word_pairs: list, output_path: Path) -> Path:
 
             # Arabic → short pause → English → long pause
             combined += ar_seg + silence_short + en_seg + silence_long
+
+        combined = add_english_subscribe_close(combined, tmp)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     combined.export(str(output_path), format="mp3")
@@ -972,12 +980,12 @@ def run_reel(arabic_words_reel: bool, youtube=None) -> Path:
         yt_title, yt_desc, yt_tags = build_metadata(word_pairs)
     if trial_active:
         if arabic_words_reel:
-            yt_title = "7 useful Egyptian Arabic phrases 🇪🇬 #Shorts"
+            yt_title = "Everyday Egyptian Arabic | 7 useful phrases #Shorts"
             yt_desc = yt_desc.replace("words", "phrases")
             yt_desc += "\nSpoken forms shown use a male speaker/addressee where gender applies. Romanization is approximate.\n"
         else:
-            yt_title = "5 تعبيرات إنجليزي مفيدة للمحادثة 💬 #Shorts"
-            yt_desc = yt_desc.replace("5 كلمات", "5 تعبيرات").replace("5 new English words", "5 useful English expressions")
+            yt_title = "إنجليزي عملي كل يوم | 5 تعبيرات للمحادثة #Shorts"
+            yt_desc = yt_desc.replace("5 كلمات", "5 تعبيرات")
     print()
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -1019,7 +1027,8 @@ def run_reel(arabic_words_reel: bool, youtube=None) -> Path:
         if managed_slot or trial_active:
             from trial_control import record_upload
             record_upload(trial_direction, slot_date, url, trial_ledger,
-                          source="trial" if trial_active else "sheet")
+                          source="trial" if trial_active else "sheet",
+                          presentation="daily-series-v1")
         if next_idx is not None:
             save_next_index(state_file, next_idx)
         print(f"\n  Done! Your Short is at:\n  {url}")
